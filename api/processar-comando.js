@@ -72,7 +72,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     let dataParseada = null;
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM YYYY', 'D [de] MMMM YYYY', 'D MMMM', 'D [de] MMMM'
+        'D MMMM YYYY', 'D [de] MMMM YYYY', 'D MMMM', 'D [de] MMMM' // Corrigido para D MMMM YYYY
     ];
 
     for (const formato of formatosData) {
@@ -83,8 +83,11 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
                  dataParseada = dataParseada.year(agoraEmSaoPaulo.year() + 1);
                  console.log("interpretarDataHora: Data com mês por extenso ajustada para próximo ano:", dataParseada.format());
              } else if (formato === 'D MMMM' || formato === 'D [de] MMMM') {
-                 dataParseada = dataParseada.year(agoraEmSaoPaulo.year()); 
-                 console.log("interpretarDataHora: Data com mês por extenso definida para ano corrente:", dataParseada.format());
+                 // Se o formato não inclui ano e a data é válida, definir ano corrente
+                 if (!dataRelativa.match(/\d{4}/)) { // Verifica se o ano não foi mencionado na string original
+                    dataParseada = dataParseada.year(agoraEmSaoPaulo.year()); 
+                    console.log("interpretarDataHora: Data com mês por extenso definida para ano corrente:", dataParseada.format());
+                 }
              }
             break; 
         } else {
@@ -93,7 +96,11 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     }
 
     if (dataParseada && dataParseada.isValid()) {
-        dataBase = agoraEmSaoPaulo.year(dataParseada.year()).month(dataParseada.month()).date(dataParseada.date());
+        // Usa a data parseada diretamente, já que dayjs lida com fusos
+        dataBase = dayjs.tz(dataParseada.format('YYYY-MM-DD'), timeZone) // Cria com a data parseada no fuso correto
+                 .hour(agoraEmSaoPaulo.hour()) // Mantém hora/min/sec de 'agora' como referência inicial
+                 .minute(agoraEmSaoPaulo.minute())
+                 .second(agoraEmSaoPaulo.second()); 
         console.log("interpretarDataHora: dataBase atualizada com data parseada (mantendo hora de agoraSP):", dataBase.format());
     } else if (dataNorm !== "hoje" && dataNorm !== "amanhã" && dataNorm !== "amanha") {
         console.error("interpretarDataHora: Formato de data não reconhecido após todas as tentativas:", dataRelativa);
@@ -164,20 +171,21 @@ export default async function handler(req, res) {
   try {
     console.log("Backend: A chamar a API da OpenAI...");
     
-    // Prompt atualizado para incluir id_reuniao claramente
+    // Prompt atualizado para incluir detalhes para ALTERAR
     const promptParaOpenAI = `
       Analise o seguinte comando de um utilizador para um assistente de agendamento, considerando que a data/hora atual é ${new Date().toISOString()} e o fuso horário de referência é America/Sao_Paulo:
       "${comando}"
 
       Extraia as seguintes informações em formato JSON:
-      - intencao: Qual a intenção principal? (ex: "marcar_reuniao", "listar_reunioes", "cancelar_reuniao", "alterar_reuniao", "desconhecida")
-      - pessoa: Nome da pessoa para a reunião (string ou null). Se a intenção for marcar.
-      - data_relativa: Data como mencionada pelo utilizador (ex: "hoje", "amanhã", "15/05/2025", "10 de junho", null). Se a intenção for marcar.
-      - horario_texto: Horário como mencionado (ex: "15 horas", "10h30", "9h", null). Se a intenção for marcar.
-      - id_reuniao: Se a intenção for cancelar ou alterar, qual o ID NUMÉRICO da reunião mencionado (inteiro ou null)? Extraia apenas o número.
+      - intencao: Qual a intenção principal? ("marcar_reuniao", "listar_reunioes", "cancelar_reuniao", "alterar_reuniao", "desconhecida")
+      - pessoa: Nome da pessoa (string ou null). Aplicável para marcar ou talvez alterar.
+      - data_relativa: Data mencionada (ex: "hoje", "amanhã", "15/05/2025", null). Aplicável para marcar ou alterar.
+      - horario_texto: Horário mencionado (ex: "15 horas", "10h30", null). Aplicável para marcar ou alterar.
+      - id_reuniao: ID NUMÉRICO da reunião a cancelar ou alterar (inteiro ou null)? Extraia apenas o número.
       - detalhes_adicionais: Qualquer outra informação relevante (string ou null).
       
       Se uma informação não for claramente mencionada ou não for aplicável à intenção, use null.
+      Para 'alterar_reuniao', extraia o ID e os NOVOS detalhes (pessoa, data_relativa, horario_texto) se mencionados.
       Responda APENAS com o objeto JSON. Não adicione explicações.
     `;
 
@@ -209,6 +217,7 @@ export default async function handler(req, res) {
 
     switch (interpretacaoComando.intencao) {
       case "marcar_reuniao":
+        // (Lógica existente para marcar, sem alterações aqui)
         if (interpretacaoComando.pessoa && interpretacaoComando.data_relativa && interpretacaoComando.horario_texto) {
           const dataHoraUTC = interpretarDataHoraComDayjs(interpretacaoComando.data_relativa, interpretacaoComando.horario_texto); 
           if (!dataHoraUTC) {
@@ -244,12 +253,12 @@ export default async function handler(req, res) {
         break;
 
       case "listar_reunioes":
+        // (Lógica existente para listar, sem alterações aqui)
         console.log("Backend: A listar reuniões do Supabase...");
         const { data: reunioes, error: erroListagem } = await supabase
           .from('reunioes')
-          .select('id, pessoa, data_hora') // Não precisamos do comando original aqui
+          .select('id, pessoa, data_hora') 
           .order('data_hora', { ascending: true });
-
         if (erroListagem) {
           console.error("Backend: Erro ao listar reuniões do Supabase:", erroListagem);
           mensagemParaFrontend = `Erro ao buscar reuniões: ${erroListagem.message}`;
@@ -264,32 +273,22 @@ export default async function handler(req, res) {
         }
         break;
 
-      // NOVO CASE PARA CANCELAR REUNIÃO
       case "cancelar_reuniao":
+        // (Lógica existente para cancelar, sem alterações aqui)
         console.log("Backend: Intenção de cancelar reunião detectada.");
         const idParaCancelar = interpretacaoComando.id_reuniao;
-
         if (idParaCancelar && Number.isInteger(idParaCancelar) && idParaCancelar > 0) {
           console.log(`Backend: A tentar cancelar reunião com ID: ${idParaCancelar}`);
-          
-          // Executa o DELETE no Supabase
           const { error: erroDelete } = await supabase
             .from('reunioes')
             .delete()
-            .match({ id: idParaCancelar }); // Condição para apagar
-
+            .match({ id: idParaCancelar }); 
           if (erroDelete) {
             console.error("Backend: Erro ao cancelar reunião no Supabase:", erroDelete);
             mensagemParaFrontend = `Erro ao cancelar reunião ID ${idParaCancelar}: ${erroDelete.message}`;
           } else {
-            // Para confirmar se algo foi realmente apagado, poderíamos verificar o 'count' se a API o retornasse,
-            // ou assumir sucesso se não houve erro. Supabase v2 pode não retornar count em delete.
-            // Vamos assumir sucesso se não houver erro.
             console.log(`Backend: Reunião ID ${idParaCancelar} cancelada (ou não encontrada).`);
             mensagemParaFrontend = `Reunião ID ${idParaCancelar} cancelada com sucesso.`;
-            // Seria ideal verificar se a linha existia antes, mas para simplificar:
-            // Se a politica RLS impedir o delete de uma linha que não existe ou que o user não tem permissão, pode dar erro.
-            // Se a linha simplesmente não existir, o delete não dará erro, mas nada acontece.
           }
         } else {
           console.error("Backend: ID inválido ou não fornecido para cancelamento:", idParaCancelar);
@@ -297,7 +296,90 @@ export default async function handler(req, res) {
         }
         break;
       
-      // Adicionar case para "alterar_reuniao" aqui no futuro
+      // NOVO CASE PARA ALTERAR REUNIÃO
+      case "alterar_reuniao":
+        console.log("Backend: Intenção de alterar reunião detectada.");
+        const idParaAlterar = interpretacaoComando.id_reuniao;
+        const novaDataRelativa = interpretacaoComando.data_relativa;
+        const novoHorarioTexto = interpretacaoComando.horario_texto;
+        const novaPessoa = interpretacaoComando.pessoa; // Permitir alterar pessoa também
+
+        if (!idParaAlterar || !Number.isInteger(idParaAlterar) || idParaAlterar <= 0) {
+            mensagemParaFrontend = "Precisa de fornecer o ID da reunião que quer alterar (ex: 'alterar reunião 5 para ...').";
+            break; // Sai do switch
+        }
+        
+        // Pelo menos um novo detalhe (data, hora, pessoa) deve ser fornecido
+        if (!novaDataRelativa && !novoHorarioTexto && !novaPessoa) {
+             mensagemParaFrontend = `Precisa de dizer o que quer alterar para a reunião ID ${idParaAlterar} (ex: 'para amanhã', 'às 15h', 'com Novo Nome').`;
+             break; 
+        }
+
+        // 1. Buscar a reunião atual para obter os dados existentes (se precisarmos deles)
+        //    Não é estritamente necessário se vamos apenas atualizar, mas pode ser útil para confirmação.
+        //    Vamos simplificar por agora e tentar atualizar diretamente.
+
+        // 2. Interpretar a nova data/hora, se fornecida
+        let novaDataHoraUTC = null;
+        if (novaDataRelativa && novoHorarioTexto) {
+            novaDataHoraUTC = interpretarDataHoraComDayjs(novaDataRelativa, novoHorarioTexto);
+            if (!novaDataHoraUTC) {
+                mensagemParaFrontend = `Não consegui interpretar a nova data "${novaDataRelativa}" ou o novo horário "${novoHorarioTexto}" para a alteração.`;
+                break; 
+            }
+            // Validação de data passada para a nova data
+             if (novaDataHoraUTC.isBefore(dayjs.utc())) {
+                 const margemMinutosValidacao = -2; 
+                 const agoraComMargemValidacao = dayjs.utc().add(margemMinutosValidacao, 'minute');
+                 if (novaDataHoraUTC.isBefore(agoraComMargemValidacao)) {
+                    const dataHoraInvalidaFormatada = novaDataHoraUTC.tz(timeZoneDisplay).format('DD/MM/YYYY HH:mm');
+                    mensagemParaFrontend = `Não é possível alterar a reunião para uma data no passado (${dataHoraInvalidaFormatada}).`;
+                    return res.status(400).json({ mensagem: mensagemParaFrontend }); 
+                 }
+             }
+        }
+        // Se apenas data ou apenas hora foi fornecida, precisaríamos de uma lógica mais complexa
+        // para buscar a reunião atual e combinar com o novo dado. Vamos exigir ambos por agora.
+        else if (novaDataRelativa || novoHorarioTexto) {
+             mensagemParaFrontend = "Para alterar a data/hora, por favor forneça tanto a nova data quanto o novo horário.";
+             break;
+        }
+
+
+        // 3. Construir o objeto de atualização para o Supabase
+        const dadosUpdate = {};
+        if (novaDataHoraUTC) {
+            dadosUpdate.data_hora = novaDataHoraUTC.toISOString();
+        }
+        if (novaPessoa) {
+            dadosUpdate.pessoa = novaPessoa;
+        }
+        // Poderíamos adicionar outros campos aqui se a IA os extraísse
+
+        console.log(`Backend: A tentar alterar reunião ID ${idParaAlterar} com dados:`, dadosUpdate);
+
+        // 4. Executar o UPDATE no Supabase
+        const { data: updateData, error: erroUpdate } = await supabase
+          .from('reunioes')
+          .update(dadosUpdate)
+          .match({ id: idParaAlterar })
+          .select(); // Retorna os dados atualizados
+
+        if (erroUpdate) {
+          console.error("Backend: Erro ao alterar reunião no Supabase:", erroUpdate);
+          mensagemParaFrontend = `Erro ao alterar reunião ID ${idParaAlterar}: ${erroUpdate.message}`;
+        } else if (updateData && updateData.length > 0) {
+          // Se o update foi bem sucedido e retornou a linha atualizada
+          console.log(`Backend: Reunião ID ${idParaAlterar} alterada:`, updateData);
+          const dataHoraConfirmacao = updateData[0].data_hora ? dayjs(updateData[0].data_hora).tz(timeZoneDisplay).format('DD/MM/YYYY HH:mm') : '(data/hora inalterada)';
+          const pessoaConfirmacao = updateData[0].pessoa;
+          mensagemParaFrontend = `Reunião ID ${idParaAlterar} alterada com sucesso para: Com ${pessoaConfirmacao} em ${dataHoraConfirmacao}.`;
+        } else {
+          // Se não houve erro, mas nenhum dado foi retornado (pode acontecer se o ID não existir)
+           console.log(`Backend: Reunião ID ${idParaAlterar} não encontrada para alteração.`);
+           mensagemParaFrontend = `Não encontrei uma reunião com o ID ${idParaAlterar} para alterar.`;
+        }
+        break;
 
       default:
         mensagemParaFrontend = "Não entendi bem o seu pedido. Pode tentar de outra forma?";
@@ -313,7 +395,7 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error("Backend: Erro geral no processamento do comando:", error);
     let mensagemErro = "Ocorreu um erro inesperado no servidor.";
-    if (error.response?.data?.error?.message) { // Acesso mais seguro
+    if (error.response?.data?.error?.message) { 
         mensagemErro = `Erro da IA: ${error.response.data.error.message}`;
     } else if (error.message) {
         mensagemErro = error.message;
