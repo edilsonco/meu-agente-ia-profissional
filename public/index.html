@@ -51,13 +51,13 @@
     </div>
 
     <script>
+        // Teste para acionar deploy Vercel (comentário adicionado)
         const botaoEnviar = document.getElementById('enviarComando');
         const campoComando = document.getElementById('comando');
         const areaResposta = document.getElementById('areaResposta');
         const textoResposta = document.getElementById('textoResposta');
 
         // URL do seu endpoint no backend (já configurado para a Vercel)
-        // A Vercel irá direcionar pedidos para /api/processar-comando para a função na pasta api/
         const BACKEND_URL = '/api/processar-comando'; 
 
         /**
