@@ -5,8 +5,8 @@ import { createClient } from '@supabase/supabase-js';
 import { parse, format, addDays, setHours, setMinutes, setSeconds, setMilliseconds, isValid } from 'date-fns';
 // Importar locale ptBR
 import { ptBR } from 'date-fns/locale'; 
-// Importar *todo* o módulo date-fns-tz
-import * as dateFnsTz from 'date-fns-tz'; 
+// Tentar importar diretamente as funções de date-fns-tz
+import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz'; 
 
 // --- Configuração das Chaves de API ---
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -38,16 +38,14 @@ async function interpretarDataHora(dataRelativa, horarioTexto) {
   }
 
   const timeZone = 'America/Sao_Paulo'; 
-  // Tentar aceder às funções através de .default
-  const utcToZonedTimeFunc = dateFnsTz.default?.utcToZonedTime || dateFnsTz.utcToZonedTime;
-  const zonedTimeToUtcFunc = dateFnsTz.default?.zonedTimeToUtc || dateFnsTz.zonedTimeToUtc;
-
-  if (!utcToZonedTimeFunc || !zonedTimeToUtcFunc) {
-      console.error("Não foi possível encontrar as funções utcToZonedTime ou zonedTimeToUtc em date-fns-tz.");
-      return null;
+  
+  // Verificar se as funções foram importadas corretamente (debug)
+  if (typeof utcToZonedTime !== 'function' || typeof zonedTimeToUtc !== 'function') {
+      console.error("Erro Crítico: Funções utcToZonedTime ou zonedTimeToUtc não foram importadas corretamente de date-fns-tz.");
+      return null; // Falha imediatamente se a importação falhou
   }
 
-  const agoraEmSaoPaulo = utcToZonedTimeFunc(new Date(), timeZone); 
+  const agoraEmSaoPaulo = utcToZonedTime(new Date(), timeZone); 
   console.log("interpretarDataHora: Agora em São Paulo:", agoraEmSaoPaulo);
 
   let dataBase = agoraEmSaoPaulo; 
@@ -78,7 +76,7 @@ async function interpretarDataHora(dataRelativa, horarioTexto) {
           let dataTentativa = parse(dataRelativa, 'dd MMMM', new Date(), { locale: ptBR });
           console.log("interpretarDataHora: Resultado parse 'dd MMMM':", dataTentativa);
           if (isValid(dataTentativa)) {
-              const dataParseadaSP = utcToZonedTimeFunc(dataTentativa, timeZone); 
+              const dataParseadaSP = utcToZonedTime(dataTentativa, timeZone); 
               if (dataParseadaSP.getMonth() < agoraEmSaoPaulo.getMonth() || (dataParseadaSP.getMonth() === agoraEmSaoPaulo.getMonth() && dataParseadaSP.getDate() < agoraEmSaoPaulo.getDate())) {
                   dataParseada = new Date(Date.UTC(agoraEmSaoPaulo.getFullYear() + 1, dataTentativa.getUTCMonth(), dataTentativa.getUTCDate()));
                   console.log("interpretarDataHora: Data 'DD de MMMM' ajustada para próximo ano:", dataParseada);
@@ -107,7 +105,7 @@ async function interpretarDataHora(dataRelativa, horarioTexto) {
             agoraEmSaoPaulo.getSeconds()
          ));
          console.log("interpretarDataHora: dataBase (UTC) atualizada com data parseada:", dataBase);
-         dataBase = utcToZonedTimeFunc(dataBase, timeZone);
+         dataBase = utcToZonedTime(dataBase, timeZone);
          console.log("interpretarDataHora: dataBase convertida para SP para aplicar hora:", dataBase);
 
       } else if (dataNorm !== "hoje" && dataNorm !== "amanhã" && dataNorm !== "amanha") {
@@ -154,7 +152,7 @@ async function interpretarDataHora(dataRelativa, horarioTexto) {
 
 
   // --- Converter para UTC para guardar no Supabase ---
-  const dataHoraFinalUTC = zonedTimeToUtcFunc(dataHoraFinalEmSaoPaulo, timeZone);
+  const dataHoraFinalUTC = zonedTimeToUtc(dataHoraFinalEmSaoPaulo, timeZone);
   console.log("interpretarDataHora: Data/Hora final em UTC para Supabase:", dataHoraFinalUTC);
   if(!isValid(dataHoraFinalUTC)) {
       console.error("interpretarDataHora: Data UTC final inválida.");
@@ -231,8 +229,6 @@ export default async function handler(req, res) {
     // --- ETAPA 2: Processar a intenção e interagir com o Supabase ---
     let mensagemParaFrontend = "Comando processado."; 
     const timeZoneDisplay = 'America/Sao_Paulo'; 
-    // Tentar aceder às funções através de .default
-    const utcToZonedTimeFunc = dateFnsTz.default?.utcToZonedTime || dateFnsTz.utcToZonedTime;
 
     switch (interpretacaoComando.intencao) {
       case "marcar_reuniao":
@@ -248,8 +244,9 @@ export default async function handler(req, res) {
                  const margemMinutosValidacao = -2; 
                  const agoraComMargemValidacao = new Date(agoraUTC.getTime() + margemMinutosValidacao * 60000); 
                  if (dataHoraUTC < agoraComMargemValidacao) {
-                    if (!utcToZonedTimeFunc) return res.status(500).json({ mensagem: "Erro interno: função de fuso horário indisponível." });
-                    const dataHoraInvalidaFormatada = format(utcToZonedTimeFunc(dataHoraUTC, timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay });
+                    // Verificar novamente se a função está disponível antes de usar
+                    if (typeof utcToZonedTime !== 'function') return res.status(500).json({ mensagem: "Erro interno: função de fuso horário indisponível." });
+                    const dataHoraInvalidaFormatada = format(utcToZonedTime(dataHoraUTC, timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay });
                     mensagemParaFrontend = `Não é possível marcar reuniões no passado (${dataHoraInvalidaFormatada}).`;
                     return res.status(400).json({ mensagem: mensagemParaFrontend }); 
                  }
@@ -279,8 +276,8 @@ export default async function handler(req, res) {
                 mensagemParaFrontend = `Erro ao marcar reunião na base de dados: ${error.message}`;
              } else {
                 console.log("Backend: Reunião inserida no Supabase:", data);
-                if (!utcToZonedTimeFunc) return res.status(500).json({ mensagem: "Erro interno: função de fuso horário indisponível para formatar resposta." });
-                const dataHoraConfirmacao = format(utcToZonedTimeFunc(dataHoraUTC, timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay });
+                if (typeof utcToZonedTime !== 'function') return res.status(500).json({ mensagem: "Erro interno: função de fuso horário indisponível para formatar resposta." });
+                const dataHoraConfirmacao = format(utcToZonedTime(dataHoraUTC, timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay });
                 mensagemParaFrontend = `Reunião com ${interpretacaoComando.pessoa} marcada para ${dataHoraConfirmacao}.`;
              }
           }
@@ -301,9 +298,9 @@ export default async function handler(req, res) {
           mensagemParaFrontend = `Erro ao buscar reuniões: ${erroListagem.message}`;
         } else if (reunioes && reunioes.length > 0) {
           mensagemParaFrontend = "Suas reuniões agendadas:\n";
-          if (!utcToZonedTimeFunc) return res.status(500).json({ mensagem: "Erro interno: função de fuso horário indisponível para listar." });
+          if (typeof utcToZonedTime !== 'function') return res.status(500).json({ mensagem: "Erro interno: função de fuso horário indisponível para listar." });
           reunioes.forEach(r => {
-            const dataHoraFormatada = r.data_hora ? format(utcToZonedTimeFunc(new Date(r.data_hora), timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay }) : 'Data/Hora inválida';
+            const dataHoraFormatada = r.data_hora ? format(utcToZonedTime(new Date(r.data_hora), timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay }) : 'Data/Hora inválida';
             mensagemParaFrontend += `- (ID: ${r.id}) Com ${r.pessoa} em ${dataHoraFormatada}\n`; 
           });
         } else {
