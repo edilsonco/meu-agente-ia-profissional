@@ -3,11 +3,11 @@ import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 // Importar dayjs e plugins necessários
 import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc.js'; // Para trabalhar com UTC
-import timezone from 'dayjs/plugin/timezone.js'; // Para trabalhar com fusos horários
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'; // Para parsear formatos específicos
-import relativeTime from 'dayjs/plugin/relativeTime.js'; // Para "hoje", "amanhã" (opcional, mas útil)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'; // Para formatos localizados
+import utc from 'dayjs/plugin/utc.js'; 
+import timezone from 'dayjs/plugin/timezone.js'; 
+import customParseFormat from 'dayjs/plugin/customParseFormat.js'; 
+import relativeTime from 'dayjs/plugin/relativeTime.js'; 
+import localizedFormat from 'dayjs/plugin/localizedFormat.js'; 
 // Importar locale pt-br para dayjs
 import 'dayjs/locale/pt-br.js';
 
@@ -72,36 +72,46 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     // Tentar parsear formatos específicos primeiro
     let dataParseada = null;
     // Formatos a tentar (ordem importa um pouco)
+    // Adicionado 'D [de] MMMM' para tentar capturar "10 de junho"
     const formatosData = [
         'DD/MM/YYYY', 
         'DD-MM-YYYY',
-        'DD/MM/YY', // Adicionar ano curto
+        'DD/MM/YY', 
         'DD-MM-YY',
         'D MMMM YYYY', // Ex: 10 Junho 2025 
+        'D [de] MMMM YYYY', // Ex: 10 de Junho 2025 (com 'de' opcional)
         'D MMMM',      // Ex: 10 Junho (assume ano corrente/próximo)
+        'D [de] MMMM', // Ex: 10 de Junho (assume ano corrente/próximo)
     ];
 
     for (const formato of formatosData) {
         // Usar dayjs(string, formato, locale, modoEstrito)
-        dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
+        // Para formatos com mês por extenso, garantir que o locale 'pt-br' está a ser considerado
+        dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); // O 'true' ativa o modo estrito
         if (dataParseada.isValid()) {
             console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format());
-             // Se o formato não inclui ano (D MMMM) e a data resultante é no passado, ajustar para o próximo ano
-             if (formato === 'D MMMM' && dataParseada.isBefore(agoraEmSaoPaulo, 'day')) {
+             // Se o formato não inclui ano (D MMMM, D [de] MMMM) e a data resultante é no passado, ajustar para o próximo ano
+             if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && dataParseada.isBefore(agoraEmSaoPaulo, 'day')) {
                  dataParseada = dataParseada.year(agoraEmSaoPaulo.year() + 1);
-                 console.log("interpretarDataHora: Data 'D MMMM' ajustada para próximo ano:", dataParseada.format());
+                 console.log("interpretarDataHora: Data com mês por extenso ajustada para próximo ano:", dataParseada.format());
+             } else if (formato === 'D MMMM' || formato === 'D [de] MMMM') {
+                 // Se o formato não inclui ano, mas a data é válida e no futuro (ou hoje), garantir que o ano é o correto
+                 dataParseada = dataParseada.year(agoraEmSaoPaulo.year()); // Garante que usa o ano atual se não especificado e for válido
+                 console.log("interpretarDataHora: Data com mês por extenso definida para ano corrente:", dataParseada.format());
              }
             break; // Sai do loop se encontrar um formato válido
+        } else {
+             console.log(`interpretarDataHora: Formato '${formato}' não correspondeu para '${dataRelativa}'`);
         }
     }
 
     if (dataParseada && dataParseada.isValid()) {
         // Se conseguiu parsear, usa essa data. Mantém a hora de agoraEmSaoPaulo como referência inicial.
         // Aplicar ano, mês e dia da data parseada à data base (que está no fuso SP)
-        dataBase = dataBase.year(dataParseada.year()).month(dataParseada.month()).date(dataParseada.date());
+        dataBase = agoraEmSaoPaulo.year(dataParseada.year()).month(dataParseada.month()).date(dataParseada.date());
         console.log("interpretarDataHora: dataBase atualizada com data parseada (mantendo hora de agoraSP):", dataBase.format());
     } else if (dataNorm !== "hoje" && dataNorm !== "amanhã" && dataNorm !== "amanha") {
-        console.error("interpretarDataHora: Formato de data não reconhecido:", dataRelativa);
+        console.error("interpretarDataHora: Formato de data não reconhecido após todas as tentativas:", dataRelativa);
         return null;
     }
   }
