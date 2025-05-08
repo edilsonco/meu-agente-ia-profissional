@@ -3,9 +3,12 @@ import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 // Importar funções de date-fns
 import { parse, format, addDays, setHours, setMinutes, setSeconds, setMilliseconds, isValid } from 'date-fns';
-// Importar *todo* o módulo date-fns-tz e o locale ptBR
-import * as dateFnsTz from 'date-fns-tz'; 
+// Importar locale ptBR
 import { ptBR } from 'date-fns/locale'; 
+// Importar date-fns-tz usando createRequire (para compatibilidade ES Modules / CommonJS)
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const dateFnsTz = require('date-fns-tz'); 
 
 // --- Configuração das Chaves de API ---
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -37,7 +40,7 @@ async function interpretarDataHora(dataRelativa, horarioTexto) {
   }
 
   const timeZone = 'America/Sao_Paulo'; 
-  // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+  // Usar as funções do objeto 'dateFnsTz' obtido via require
   const agoraEmSaoPaulo = dateFnsTz.utcToZonedTime(new Date(), timeZone); 
   console.log("interpretarDataHora: Agora em São Paulo:", agoraEmSaoPaulo);
 
@@ -69,7 +72,7 @@ async function interpretarDataHora(dataRelativa, horarioTexto) {
           let dataTentativa = parse(dataRelativa, 'dd MMMM', new Date(), { locale: ptBR });
           console.log("interpretarDataHora: Resultado parse 'dd MMMM':", dataTentativa);
           if (isValid(dataTentativa)) {
-              // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+              // Usar as funções do objeto 'dateFnsTz' obtido via require
               const dataParseadaSP = dateFnsTz.utcToZonedTime(dataTentativa, timeZone); 
               if (dataParseadaSP.getMonth() < agoraEmSaoPaulo.getMonth() || (dataParseadaSP.getMonth() === agoraEmSaoPaulo.getMonth() && dataParseadaSP.getDate() < agoraEmSaoPaulo.getDate())) {
                   dataParseada = new Date(Date.UTC(agoraEmSaoPaulo.getFullYear() + 1, dataTentativa.getUTCMonth(), dataTentativa.getUTCDate()));
@@ -79,7 +82,7 @@ async function interpretarDataHora(dataRelativa, horarioTexto) {
                   console.log("interpretarDataHora: Data 'DD de MMMM' mantida no ano corrente:", dataParseada);
               }
           } else {
-              dataTentativa = parse(dataRelativa, 'dd MMMM yyyy', new Date(), { locale: ptBR }); // Corrigido para incluir yyyy
+              dataTentativa = parse(dataRelativa, 'dd MMMM yyyy', new Date(), { locale: ptBR }); 
               console.log("interpretarDataHora: Resultado parse 'dd MMMM yyyy':", dataTentativa);
               if (isValid(dataTentativa)) {
                    dataParseada = new Date(Date.UTC(dataTentativa.getFullYear(), dataTentativa.getUTCMonth(), dataTentativa.getUTCDate()));
@@ -99,7 +102,7 @@ async function interpretarDataHora(dataRelativa, horarioTexto) {
             agoraEmSaoPaulo.getSeconds()
          ));
          console.log("interpretarDataHora: dataBase (UTC) atualizada com data parseada:", dataBase);
-         // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+         // Usar as funções do objeto 'dateFnsTz' obtido via require
          dataBase = dateFnsTz.utcToZonedTime(dataBase, timeZone);
          console.log("interpretarDataHora: dataBase convertida para SP para aplicar hora:", dataBase);
 
@@ -147,7 +150,7 @@ async function interpretarDataHora(dataRelativa, horarioTexto) {
 
 
   // --- Converter para UTC para guardar no Supabase ---
-  // Usar a função importada corretamente: dateFnsTz.zonedTimeToUtc
+  // Usar as funções do objeto 'dateFnsTz' obtido via require
   const dataHoraFinalUTC = dateFnsTz.zonedTimeToUtc(dataHoraFinalEmSaoPaulo, timeZone);
   console.log("interpretarDataHora: Data/Hora final em UTC para Supabase:", dataHoraFinalUTC);
   if(!isValid(dataHoraFinalUTC)) {
@@ -224,7 +227,7 @@ export default async function handler(req, res) {
 
     // --- ETAPA 2: Processar a intenção e interagir com o Supabase ---
     let mensagemParaFrontend = "Comando processado."; 
-    const timeZoneDisplay = 'America/Sao_Paulo'; // Fuso horário para exibir ao utilizador
+    const timeZoneDisplay = 'America/Sao_Paulo'; 
 
     switch (interpretacaoComando.intencao) {
       case "marcar_reuniao":
@@ -240,7 +243,7 @@ export default async function handler(req, res) {
                  const margemMinutosValidacao = -2; 
                  const agoraComMargemValidacao = new Date(agoraUTC.getTime() + margemMinutosValidacao * 60000); 
                  if (dataHoraUTC < agoraComMargemValidacao) {
-                    // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+                    // Usar as funções do objeto 'dateFnsTz' obtido via require
                     const dataHoraInvalidaFormatada = format(dateFnsTz.utcToZonedTime(dataHoraUTC, timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay });
                     mensagemParaFrontend = `Não é possível marcar reuniões no passado (${dataHoraInvalidaFormatada}).`;
                     return res.status(400).json({ mensagem: mensagemParaFrontend }); 
@@ -271,7 +274,7 @@ export default async function handler(req, res) {
                 mensagemParaFrontend = `Erro ao marcar reunião na base de dados: ${error.message}`;
              } else {
                 console.log("Backend: Reunião inserida no Supabase:", data);
-                 // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+                 // Usar as funções do objeto 'dateFnsTz' obtido via require
                 const dataHoraConfirmacao = format(dateFnsTz.utcToZonedTime(dataHoraUTC, timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay });
                 mensagemParaFrontend = `Reunião com ${interpretacaoComando.pessoa} marcada para ${dataHoraConfirmacao}.`;
              }
@@ -294,7 +297,7 @@ export default async function handler(req, res) {
         } else if (reunioes && reunioes.length > 0) {
           mensagemParaFrontend = "Suas reuniões agendadas:\n";
           reunioes.forEach(r => {
-             // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+             // Usar as funções do objeto 'dateFnsTz' obtido via require
             const dataHoraFormatada = r.data_hora ? format(dateFnsTz.utcToZonedTime(new Date(r.data_hora), timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay }) : 'Data/Hora inválida';
             mensagemParaFrontend += `- (ID: ${r.id}) Com ${r.pessoa} em ${dataHoraFormatada}\n`; 
           });
