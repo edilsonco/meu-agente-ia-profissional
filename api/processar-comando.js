@@ -69,45 +69,30 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   } else if (dataNorm === "amanhã" || dataNorm === "amanha") {
     dataBase = dataBase.add(1, 'day');
   } else {
-    // Tentar parsear formatos específicos primeiro
     let dataParseada = null;
-    // Formatos a tentar (ordem importa um pouco)
-    // Adicionado 'D [de] MMMM' para tentar capturar "10 de junho"
     const formatosData = [
-        'DD/MM/YYYY', 
-        'DD-MM-YYYY',
-        'DD/MM/YY', 
-        'DD-MM-YY',
-        'D MMMM YYYY', // Ex: 10 Junho 2025 
-        'D [de] MMMM YYYY', // Ex: 10 de Junho 2025 (com 'de' opcional)
-        'D MMMM',      // Ex: 10 Junho (assume ano corrente/próximo)
-        'D [de] MMMM', // Ex: 10 de Junho (assume ano corrente/próximo)
+        'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
+        'D MMMM YYYY', 'D [de] MMMM YYYY', 'D MMMM', 'D [de] MMMM'
     ];
 
     for (const formato of formatosData) {
-        // Usar dayjs(string, formato, locale, modoEstrito)
-        // Para formatos com mês por extenso, garantir que o locale 'pt-br' está a ser considerado
-        dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); // O 'true' ativa o modo estrito
+        dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
         if (dataParseada.isValid()) {
             console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format());
-             // Se o formato não inclui ano (D MMMM, D [de] MMMM) e a data resultante é no passado, ajustar para o próximo ano
              if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && dataParseada.isBefore(agoraEmSaoPaulo, 'day')) {
                  dataParseada = dataParseada.year(agoraEmSaoPaulo.year() + 1);
                  console.log("interpretarDataHora: Data com mês por extenso ajustada para próximo ano:", dataParseada.format());
              } else if (formato === 'D MMMM' || formato === 'D [de] MMMM') {
-                 // Se o formato não inclui ano, mas a data é válida e no futuro (ou hoje), garantir que o ano é o correto
-                 dataParseada = dataParseada.year(agoraEmSaoPaulo.year()); // Garante que usa o ano atual se não especificado e for válido
+                 dataParseada = dataParseada.year(agoraEmSaoPaulo.year()); 
                  console.log("interpretarDataHora: Data com mês por extenso definida para ano corrente:", dataParseada.format());
              }
-            break; // Sai do loop se encontrar um formato válido
+            break; 
         } else {
              console.log(`interpretarDataHora: Formato '${formato}' não correspondeu para '${dataRelativa}'`);
         }
     }
 
     if (dataParseada && dataParseada.isValid()) {
-        // Se conseguiu parsear, usa essa data. Mantém a hora de agoraEmSaoPaulo como referência inicial.
-        // Aplicar ano, mês e dia da data parseada à data base (que está no fuso SP)
         dataBase = agoraEmSaoPaulo.year(dataParseada.year()).month(dataParseada.month()).date(dataParseada.date());
         console.log("interpretarDataHora: dataBase atualizada com data parseada (mantendo hora de agoraSP):", dataBase.format());
     } else if (dataNorm !== "hoje" && dataNorm !== "amanhã" && dataNorm !== "amanha") {
@@ -135,17 +120,15 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   // --- Combinar Data e Hora ---
   let dataHoraFinalEmSaoPaulo;
   try {
-    // Aplica a hora e minutos à dataBase (que está no fuso de São Paulo)
     dataHoraFinalEmSaoPaulo = dataBase.hour(horas).minute(minutos).second(0).millisecond(0);
     console.log("interpretarDataHora: Data/Hora final em São Paulo:", dataHoraFinalEmSaoPaulo.format());
     if(!dataHoraFinalEmSaoPaulo.isValid()) throw new Error("Data/Hora inválida após setar H/M");
-
   } catch (e) {
       console.error("interpretarDataHora: Erro ao combinar data e hora:", e);
       return null;
   }
 
-  // --- Converter para UTC para guardar no Supabase ---
+  // --- Converter para UTC ---
   const dataHoraFinalUTC = dataHoraFinalEmSaoPaulo.utc();
   console.log("interpretarDataHora: Data/Hora final em UTC para Supabase:", dataHoraFinalUTC.format());
   if(!dataHoraFinalUTC.isValid()) {
@@ -153,9 +136,8 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
       return null;
   }
 
-  return dataHoraFinalUTC; // Retorna o objeto Dayjs em UTC
+  return dataHoraFinalUTC; 
 }
-
 
 // --- Função Principal da Serverless Function (Handler da Vercel) ---
 export default async function handler(req, res) { 
@@ -182,19 +164,20 @@ export default async function handler(req, res) {
   try {
     console.log("Backend: A chamar a API da OpenAI...");
     
+    // Prompt atualizado para incluir id_reuniao claramente
     const promptParaOpenAI = `
       Analise o seguinte comando de um utilizador para um assistente de agendamento, considerando que a data/hora atual é ${new Date().toISOString()} e o fuso horário de referência é America/Sao_Paulo:
       "${comando}"
 
       Extraia as seguintes informações em formato JSON:
       - intencao: Qual a intenção principal? (ex: "marcar_reuniao", "listar_reunioes", "cancelar_reuniao", "alterar_reuniao", "desconhecida")
-      - pessoa: Nome da pessoa para a reunião (string ou null).
-      - data_relativa: Data como mencionada pelo utilizador (ex: "hoje", "amanhã", "15/05/2025", "10 de junho", null). Use o formato original mencionado.
-      - horario_texto: Horário como mencionado (ex: "15 horas", "10h30", "9h", null). Use o formato original mencionado.
-      - id_reuniao: Se a intenção for cancelar ou alterar, qual o ID da reunião mencionado (inteiro ou null)?
+      - pessoa: Nome da pessoa para a reunião (string ou null). Se a intenção for marcar.
+      - data_relativa: Data como mencionada pelo utilizador (ex: "hoje", "amanhã", "15/05/2025", "10 de junho", null). Se a intenção for marcar.
+      - horario_texto: Horário como mencionado (ex: "15 horas", "10h30", "9h", null). Se a intenção for marcar.
+      - id_reuniao: Se a intenção for cancelar ou alterar, qual o ID NUMÉRICO da reunião mencionado (inteiro ou null)? Extraia apenas o número.
       - detalhes_adicionais: Qualquer outra informação relevante (string ou null).
       
-      Se uma informação não for claramente mencionada, use null.
+      Se uma informação não for claramente mencionada ou não for aplicável à intenção, use null.
       Responda APENAS com o objeto JSON. Não adicione explicações.
     `;
 
@@ -227,13 +210,10 @@ export default async function handler(req, res) {
     switch (interpretacaoComando.intencao) {
       case "marcar_reuniao":
         if (interpretacaoComando.pessoa && interpretacaoComando.data_relativa && interpretacaoComando.horario_texto) {
-          
           const dataHoraUTC = interpretarDataHoraComDayjs(interpretacaoComando.data_relativa, interpretacaoComando.horario_texto); 
-
           if (!dataHoraUTC) {
              mensagemParaFrontend = `Não consegui interpretar a data "${interpretacaoComando.data_relativa}" ou o horário "${interpretacaoComando.horario_texto}". Pode tentar um formato diferente?`;
           } else {
-             // Validação de data passada
              if (dataHoraUTC.isBefore(dayjs.utc())) {
                  const margemMinutosValidacao = -2; 
                  const agoraComMargemValidacao = dayjs.utc().add(margemMinutosValidacao, 'minute');
@@ -243,33 +223,17 @@ export default async function handler(req, res) {
                     return res.status(400).json({ mensagem: mensagemParaFrontend }); 
                  }
              }
-             
-             // Formato ISO 8601 para guardar no Supabase (timestamp with timezone)
              const dataHoraSupabase = dataHoraUTC.toISOString(); 
-
-             console.log("Backend: A tentar inserir no Supabase:", { 
-                pessoa: interpretacaoComando.pessoa, 
-                data_hora: dataHoraSupabase, 
-                descricao_comando: comando 
-             });
-
+             console.log("Backend: A tentar inserir no Supabase:", { pessoa: interpretacaoComando.pessoa, data_hora: dataHoraSupabase, descricao_comando: comando });
              const { data, error } = await supabase
                 .from('reunioes') 
-                .insert([
-                  { 
-                    pessoa: interpretacaoComando.pessoa, 
-                    data_hora: dataHoraSupabase, 
-                    descricao_comando: comando 
-                  },
-                ])
+                .insert([{ pessoa: interpretacaoComando.pessoa, data_hora: dataHoraSupabase, descricao_comando: comando }])
                 .select(); 
-
              if (error) {
                 console.error("Backend: Erro ao inserir no Supabase:", error);
                 mensagemParaFrontend = `Erro ao marcar reunião na base de dados: ${error.message}`;
              } else {
                 console.log("Backend: Reunião inserida no Supabase:", data);
-                // Formatar a data/hora para a resposta no fuso horário de SP
                 const dataHoraConfirmacao = dataHoraUTC.tz(timeZoneDisplay).format('DD/MM/YYYY HH:mm');
                 mensagemParaFrontend = `Reunião com ${interpretacaoComando.pessoa} marcada para ${dataHoraConfirmacao}.`;
              }
@@ -283,7 +247,7 @@ export default async function handler(req, res) {
         console.log("Backend: A listar reuniões do Supabase...");
         const { data: reunioes, error: erroListagem } = await supabase
           .from('reunioes')
-          .select('id, pessoa, data_hora, descricao_comando') 
+          .select('id, pessoa, data_hora') // Não precisamos do comando original aqui
           .order('data_hora', { ascending: true });
 
         if (erroListagem) {
@@ -292,7 +256,6 @@ export default async function handler(req, res) {
         } else if (reunioes && reunioes.length > 0) {
           mensagemParaFrontend = "Suas reuniões agendadas:\n";
           reunioes.forEach(r => {
-            // Formatar a data_hora guardada (UTC) para São Paulo
             const dataHoraFormatada = r.data_hora ? dayjs(r.data_hora).tz(timeZoneDisplay).format('DD/MM/YYYY HH:mm') : 'Data/Hora inválida';
             mensagemParaFrontend += `- (ID: ${r.id}) Com ${r.pessoa} em ${dataHoraFormatada}\n`; 
           });
@@ -300,7 +263,42 @@ export default async function handler(req, res) {
           mensagemParaFrontend = "Você não tem nenhuma reunião agendada.";
         }
         break;
+
+      // NOVO CASE PARA CANCELAR REUNIÃO
+      case "cancelar_reuniao":
+        console.log("Backend: Intenção de cancelar reunião detectada.");
+        const idParaCancelar = interpretacaoComando.id_reuniao;
+
+        if (idParaCancelar && Number.isInteger(idParaCancelar) && idParaCancelar > 0) {
+          console.log(`Backend: A tentar cancelar reunião com ID: ${idParaCancelar}`);
+          
+          // Executa o DELETE no Supabase
+          const { error: erroDelete } = await supabase
+            .from('reunioes')
+            .delete()
+            .match({ id: idParaCancelar }); // Condição para apagar
+
+          if (erroDelete) {
+            console.error("Backend: Erro ao cancelar reunião no Supabase:", erroDelete);
+            mensagemParaFrontend = `Erro ao cancelar reunião ID ${idParaCancelar}: ${erroDelete.message}`;
+          } else {
+            // Para confirmar se algo foi realmente apagado, poderíamos verificar o 'count' se a API o retornasse,
+            // ou assumir sucesso se não houve erro. Supabase v2 pode não retornar count em delete.
+            // Vamos assumir sucesso se não houver erro.
+            console.log(`Backend: Reunião ID ${idParaCancelar} cancelada (ou não encontrada).`);
+            mensagemParaFrontend = `Reunião ID ${idParaCancelar} cancelada com sucesso.`;
+            // Seria ideal verificar se a linha existia antes, mas para simplificar:
+            // Se a politica RLS impedir o delete de uma linha que não existe ou que o user não tem permissão, pode dar erro.
+            // Se a linha simplesmente não existir, o delete não dará erro, mas nada acontece.
+          }
+        } else {
+          console.error("Backend: ID inválido ou não fornecido para cancelamento:", idParaCancelar);
+          mensagemParaFrontend = "Não consegui identificar o ID da reunião que você quer cancelar. Por favor, inclua o número do ID (ex: 'cancelar reunião 5').";
+        }
+        break;
       
+      // Adicionar case para "alterar_reuniao" aqui no futuro
+
       default:
         mensagemParaFrontend = "Não entendi bem o seu pedido. Pode tentar de outra forma?";
         if (interpretacaoComando.intencao === "desconhecida" && interpretacaoComando.detalhes_adicionais) {
@@ -315,7 +313,7 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error("Backend: Erro geral no processamento do comando:", error);
     let mensagemErro = "Ocorreu um erro inesperado no servidor.";
-    if (error.response && error.response.data && error.response.data.error && error.response.data.error.message) {
+    if (error.response?.data?.error?.message) { // Acesso mais seguro
         mensagemErro = `Erro da IA: ${error.response.data.error.message}`;
     } else if (error.message) {
         mensagemErro = error.message;
