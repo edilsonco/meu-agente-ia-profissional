@@ -1,50 +1,44 @@
 // Importações necessárias
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
-// Importar funções de date-fns e date-fns-tz
+// Importar funções de date-fns
 import { parse, format, addDays, setHours, setMinutes, setSeconds, setMilliseconds, isValid } from 'date-fns';
-import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
-// Importar locale pt-BR (necessário para parsear nomes de meses)
-import { ptBR } from 'date-fns/locale'; // Importação estática
+// Importar *todo* o módulo date-fns-tz e o locale ptBR
+import * as dateFnsTz from 'date-fns-tz'; 
+import { ptBR } from 'date-fns/locale'; 
 
-// --- Configuração das Chaves de API (obtidas das Variáveis de Ambiente na Vercel) ---
+// --- Configuração das Chaves de API ---
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY; 
 
-// --- Inicialização dos Clientes das APIs ---
+// --- Inicialização dos Clientes ---
 let openai;
 if (OPENAI_API_KEY) {
   openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
   });
 } else {
-  console.warn("Chave da API OpenAI não configurada. A funcionalidade de IA estará desativada.");
+  console.warn("Chave da API OpenAI não configurada.");
 }
 
 let supabase;
 if (SUPABASE_URL && SUPABASE_ANON_KEY) {
   supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 } else {
-  console.warn("Credenciais do Supabase não configuradas. A funcionalidade de base de dados estará desativada.");
+  console.warn("Credenciais do Supabase não configuradas.");
 }
 
-// --- Função Auxiliar para Interpretar Data e Hora (Agora ASYNC) ---
-/**
- * Tenta converter a data relativa/texto e horário texto num objeto Date UTC.
- * Considera o fuso horário de São Paulo para "hoje" e "amanhã".
- * @param {string | null} dataRelativa - Ex: "hoje", "amanhã", "15/05/2025", "10 de junho"
- * @param {string | null} horarioTexto - Ex: "10h", "14:30", "16 horas"
- * @returns {Promise<Date | null>} - Objeto Date em UTC ou null se a conversão falhar.
- */
-async function interpretarDataHora(dataRelativa, horarioTexto) { // Adicionado async
+// --- Função Auxiliar para Interpretar Data e Hora ---
+async function interpretarDataHora(dataRelativa, horarioTexto) { 
   if (!dataRelativa || !horarioTexto) {
     console.error("interpretarDataHora: Data ou Horário em falta.", { dataRelativa, horarioTexto });
     return null;
   }
 
   const timeZone = 'America/Sao_Paulo'; 
-  const agoraEmSaoPaulo = utcToZonedTime(new Date(), timeZone); 
+  // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+  const agoraEmSaoPaulo = dateFnsTz.utcToZonedTime(new Date(), timeZone); 
   console.log("interpretarDataHora: Agora em São Paulo:", agoraEmSaoPaulo);
 
   let dataBase = agoraEmSaoPaulo; 
@@ -65,21 +59,18 @@ async function interpretarDataHora(dataRelativa, horarioTexto) { // Adicionado a
              const mes = parseInt(partes[2], 10) -1; 
              let ano = parseInt(partes[3], 10);
              if (partes[3].length === 2) ano += 2000; 
-             // Usar Date constructor (cuidado com timezones do servidor, mas vamos ajustar depois)
-             dataParseada = new Date(Date.UTC(ano, mes, dia)); // Criar em UTC para evitar problemas de fuso do servidor
+             dataParseada = new Date(Date.UTC(ano, mes, dia)); 
              console.log("interpretarDataHora: Data parseada (DD/MM/YYYY) como UTC:", dataParseada);
-             if (!isValid(dataParseada)) dataParseada = null; // Verificar validade
+             if (!isValid(dataParseada)) dataParseada = null; 
          }
       } 
-      // Tentar formato "DD de MMMM" (ex: "10 de junho")
       else if (dataNorm.includes(" de ")) {
           console.log("interpretarDataHora: Tentando parse 'DD de MMMM' com locale ptBR...");
-          // Tentar parsear com ano corrente implícito
           let dataTentativa = parse(dataRelativa, 'dd MMMM', new Date(), { locale: ptBR });
           console.log("interpretarDataHora: Resultado parse 'dd MMMM':", dataTentativa);
           if (isValid(dataTentativa)) {
-              // Se a data parseada for no passado (considerando apenas dia/mês), assume o próximo ano
-              const dataParseadaSP = utcToZonedTime(dataTentativa, timeZone); // Converter para SP para comparar meses/dias
+              // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+              const dataParseadaSP = dateFnsTz.utcToZonedTime(dataTentativa, timeZone); 
               if (dataParseadaSP.getMonth() < agoraEmSaoPaulo.getMonth() || (dataParseadaSP.getMonth() === agoraEmSaoPaulo.getMonth() && dataParseadaSP.getDate() < agoraEmSaoPaulo.getDate())) {
                   dataParseada = new Date(Date.UTC(agoraEmSaoPaulo.getFullYear() + 1, dataTentativa.getUTCMonth(), dataTentativa.getUTCDate()));
                   console.log("interpretarDataHora: Data 'DD de MMMM' ajustada para próximo ano:", dataParseada);
@@ -88,31 +79,28 @@ async function interpretarDataHora(dataRelativa, horarioTexto) { // Adicionado a
                   console.log("interpretarDataHora: Data 'DD de MMMM' mantida no ano corrente:", dataParseada);
               }
           } else {
-              // Tentar parsear com ano explícito (se houver, ex: "10 de junho de 2026")
-              dataTentativa = parse(dataRelativa, 'dd MMMM yyyy', new Date(), { locale: ptBR });
+              dataTentativa = parse(dataRelativa, 'dd MMMM yyyy', new Date(), { locale: ptBR }); // Corrigido para incluir yyyy
               console.log("interpretarDataHora: Resultado parse 'dd MMMM yyyy':", dataTentativa);
               if (isValid(dataTentativa)) {
                    dataParseada = new Date(Date.UTC(dataTentativa.getFullYear(), dataTentativa.getUTCMonth(), dataTentativa.getUTCDate()));
-                   console.log("interpretarDataHora: Data 'DD de MMMM yyyy' parseada:", dataParseada);
+                   console.log("interpretarDataHora: Data 'dd MMMM yyyy' parseada:", dataParseada);
               }
           }
-          if (!isValid(dataParseada)) dataParseada = null; // Garantir que é válida
+          if (!isValid(dataParseada)) dataParseada = null; 
       }
       
       if (dataParseada) {
-         // Se conseguiu parsear, ajusta a dataBase para essa data (em UTC)
-         // Mantém a hora/min/sec de agoraEmSaoPaulo para referência, mas aplica à data parseada
          dataBase = new Date(Date.UTC(
             dataParseada.getUTCFullYear(), 
             dataParseada.getUTCMonth(), 
             dataParseada.getUTCDate(),
-            agoraEmSaoPaulo.getHours(), // Usar hora de SP como base
+            agoraEmSaoPaulo.getHours(), 
             agoraEmSaoPaulo.getMinutes(),
             agoraEmSaoPaulo.getSeconds()
          ));
          console.log("interpretarDataHora: dataBase (UTC) atualizada com data parseada:", dataBase);
-         // Converter para SP para aplicar hora corretamente
-         dataBase = utcToZonedTime(dataBase, timeZone);
+         // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+         dataBase = dateFnsTz.utcToZonedTime(dataBase, timeZone);
          console.log("interpretarDataHora: dataBase convertida para SP para aplicar hora:", dataBase);
 
       } else if (dataNorm !== "hoje" && dataNorm !== "amanhã" && dataNorm !== "amanha") {
@@ -145,8 +133,6 @@ async function interpretarDataHora(dataRelativa, horarioTexto) { // Adicionado a
   // --- Combinar Data e Hora ---
   let dataHoraFinalEmSaoPaulo;
   try {
-    // Cria uma NOVA data a partir de dataBase (que está em SP ou foi parseada e convertida para SP)
-    // e aplica a hora e minutos extraídos.
     dataHoraFinalEmSaoPaulo = setHours(dataBase, horas);
     dataHoraFinalEmSaoPaulo = setMinutes(dataHoraFinalEmSaoPaulo, minutos);
     dataHoraFinalEmSaoPaulo = setSeconds(dataHoraFinalEmSaoPaulo, 0);
@@ -161,27 +147,20 @@ async function interpretarDataHora(dataRelativa, horarioTexto) { // Adicionado a
 
 
   // --- Converter para UTC para guardar no Supabase ---
-  const dataHoraFinalUTC = zonedTimeToUtc(dataHoraFinalEmSaoPaulo, timeZone);
+  // Usar a função importada corretamente: dateFnsTz.zonedTimeToUtc
+  const dataHoraFinalUTC = dateFnsTz.zonedTimeToUtc(dataHoraFinalEmSaoPaulo, timeZone);
   console.log("interpretarDataHora: Data/Hora final em UTC para Supabase:", dataHoraFinalUTC);
   if(!isValid(dataHoraFinalUTC)) {
       console.error("interpretarDataHora: Data UTC final inválida.");
       return null;
   }
 
-  // Validação de passado (opcional aqui, pode ser feito depois)
-  // const agoraUTC = new Date();
-  // const margemMinutos = -5; 
-  // const agoraComMargem = new Date(agoraUTC.getTime() + margemMinutos * 60000); 
-  // if (dataHoraFinalUTC < agoraComMargem) {
-  //     console.warn("interpretarDataHora: Tentativa de agendar no passado detectada.", { dataHoraFinalUTC, agoraUTC });
-  // }
-
   return dataHoraFinalUTC;
 }
 
 
 // --- Função Principal da Serverless Function (Handler da Vercel) ---
-export default async function handler(req, res) { // Adicionado async aqui também
+export default async function handler(req, res) { 
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
     return res.status(405).json({ mensagem: `Método ${req.method} não permitido.` });
@@ -245,13 +224,13 @@ export default async function handler(req, res) { // Adicionado async aqui tamb�
 
     // --- ETAPA 2: Processar a intenção e interagir com o Supabase ---
     let mensagemParaFrontend = "Comando processado."; 
+    const timeZoneDisplay = 'America/Sao_Paulo'; // Fuso horário para exibir ao utilizador
 
     switch (interpretacaoComando.intencao) {
       case "marcar_reuniao":
         if (interpretacaoComando.pessoa && interpretacaoComando.data_relativa && interpretacaoComando.horario_texto) {
           
-          // Tentar converter data e hora usando a nova função (agora async)
-          const dataHoraUTC = await interpretarDataHora(interpretacaoComando.data_relativa, interpretacaoComando.horario_texto); // Adicionado await
+          const dataHoraUTC = await interpretarDataHora(interpretacaoComando.data_relativa, interpretacaoComando.horario_texto); 
 
           if (!dataHoraUTC) {
              mensagemParaFrontend = `Não consegui interpretar a data "${interpretacaoComando.data_relativa}" ou o horário "${interpretacaoComando.horario_texto}". Pode tentar um formato diferente?`;
@@ -261,8 +240,8 @@ export default async function handler(req, res) { // Adicionado async aqui tamb�
                  const margemMinutosValidacao = -2; 
                  const agoraComMargemValidacao = new Date(agoraUTC.getTime() + margemMinutosValidacao * 60000); 
                  if (dataHoraUTC < agoraComMargemValidacao) {
-                    // Formatar a data inválida para a mensagem de erro
-                    const dataHoraInvalidaFormatada = format(utcToZonedTime(dataHoraUTC, timeZone), 'dd/MM/yyyy HH:mm', { timeZone: timeZone });
+                    // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+                    const dataHoraInvalidaFormatada = format(dateFnsTz.utcToZonedTime(dataHoraUTC, timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay });
                     mensagemParaFrontend = `Não é possível marcar reuniões no passado (${dataHoraInvalidaFormatada}).`;
                     return res.status(400).json({ mensagem: mensagemParaFrontend }); 
                  }
@@ -292,7 +271,8 @@ export default async function handler(req, res) { // Adicionado async aqui tamb�
                 mensagemParaFrontend = `Erro ao marcar reunião na base de dados: ${error.message}`;
              } else {
                 console.log("Backend: Reunião inserida no Supabase:", data);
-                const dataHoraConfirmacao = format(utcToZonedTime(dataHoraUTC, 'America/Sao_Paulo'), 'dd/MM/yyyy HH:mm', { timeZone: 'America/Sao_Paulo' });
+                 // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+                const dataHoraConfirmacao = format(dateFnsTz.utcToZonedTime(dataHoraUTC, timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay });
                 mensagemParaFrontend = `Reunião com ${interpretacaoComando.pessoa} marcada para ${dataHoraConfirmacao}.`;
              }
           }
@@ -314,7 +294,8 @@ export default async function handler(req, res) { // Adicionado async aqui tamb�
         } else if (reunioes && reunioes.length > 0) {
           mensagemParaFrontend = "Suas reuniões agendadas:\n";
           reunioes.forEach(r => {
-            const dataHoraFormatada = r.data_hora ? format(utcToZonedTime(new Date(r.data_hora), 'America/Sao_Paulo'), 'dd/MM/yyyy HH:mm', { timeZone: 'America/Sao_Paulo' }) : 'Data/Hora inválida';
+             // Usar a função importada corretamente: dateFnsTz.utcToZonedTime
+            const dataHoraFormatada = r.data_hora ? format(dateFnsTz.utcToZonedTime(new Date(r.data_hora), timeZoneDisplay), 'dd/MM/yyyy HH:mm', { timeZone: timeZoneDisplay }) : 'Data/Hora inválida';
             mensagemParaFrontend += `- (ID: ${r.id}) Com ${r.pessoa} em ${dataHoraFormatada}\n`; 
           });
         } else {
