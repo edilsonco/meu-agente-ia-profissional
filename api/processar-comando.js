@@ -52,6 +52,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     dataBase = dataBase.add(1, 'day');
   } else {
     let dataParseada = null;
+    // Formatos a tentar, incluindo aqueles com 'de' e ano opcional/explícito
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
         'D MMMM YYYY', 'D [de] MMMM [de] YYYY', // Com ano explícito
@@ -59,9 +60,11 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     ];
 
     for (const formato of formatosData) {
-      dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
+      dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); // Modo estrito
       if (dataParseada.isValid()) {
+        // Se o formato não especifica o ano (ex: 'D MMMM') e o ano não está na string original
         if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
+            // Se a data parseada (considerando apenas dia/mês) for anterior a hoje, assume próximo ano
             let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
             if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
                 dataParseada = dataComAnoCorrente.add(1, 'year');
@@ -70,10 +73,11 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             }
         }
         console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format());
-        break; 
+        break; // Sai do loop se encontrar um formato válido
       }
     }
     if (dataParseada && dataParseada.isValid()) {
+      // Aplicar ano, mês e dia da data parseada à data base (que está no fuso SP), mantendo a hora de referência
       dataBase = agoraEmSaoPaulo.year(dataParseada.year()).month(dataParseada.month()).date(dataParseada.date());
     } else {
       console.error("interpretarDataHora: Formato de data não reconhecido:", dataRelativa);
@@ -157,18 +161,20 @@ export default async function handler(req, res) {
       - horario_novo_reuniao: Horário para a nova reunião (string ou null, ex: "15 horas", "10h30").
 
       // Para identificar uma reunião ALVO (para cancelar ou alterar SEM ID):
+      // Preencha estes campos se a intenção for cancelar ou alterar E o id_reuniao for null.
       - pessoa_alvo: Nome da pessoa da reunião que o utilizador quer cancelar ou alterar (string ou null).
       - data_alvo: Data da reunião que o utilizador quer cancelar ou alterar (string ou null).
       - horario_alvo: Horário da reunião que o utilizador quer cancelar ou alterar (string ou null).
 
       // Para os NOVOS dados de uma alteração (se a intenção for 'alterar_reuniao'):
+      // Preencha estes campos com os NOVOS detalhes que o utilizador mencionou para a alteração.
       - pessoa_alteracao: NOVO nome da pessoa para a reunião (string ou null, se mencionado).
       - data_alteracao: NOVA data para a reunião (string ou null, se mencionado).
       - horario_alteracao: NOVO horário para a reunião (string ou null, se mencionado).
       
-      - mensagem_clarificacao_necessaria: Se a intenção for clara (marcar, cancelar por descrição, alterar por descrição) mas faltar informação essencial para prosseguir (ex: para marcar, falta data ou hora; para cancelar por descrição, falta pessoa_alvo, data_alvo ou horario_alvo; para alterar, falta o que alterar ou os novos dados), descreva EXATAMENTE o que falta para essa intenção. (string ou null). Se todas as informações para a intenção principal estiverem presentes, este campo deve ser null.
+      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial para prosseguir (ex: para marcar, falta data ou hora; para cancelar por descrição, falta pessoa_alvo, data_alvo ou horario_alvo; para alterar, falta o que alterar ou os novos dados), descreva EXATAMENTE o que falta para essa intenção. (string ou null). Se todas as informações para a intenção principal estiverem presentes, este campo deve ser null.
       
-      Priorize 'id_reuniao' se um número for claramente um ID.
+      Priorize o preenchimento de 'id_reuniao' se um número for claramente um ID.
       Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'.
       Se a intenção for 'cancelar_reuniao' e 'id_reuniao' for null, foque em 'pessoa_alvo', 'data_alvo', e 'horario_alvo'.
       Se a intenção for 'alterar_reuniao', foque em identificar a reunião alvo (via 'id_reuniao' ou 'pessoa_alvo', 'data_alvo', 'horario_alvo') E os novos dados ('pessoa_alteracao', 'data_alteracao', 'horario_alteracao').
@@ -183,6 +189,8 @@ export default async function handler(req, res) {
 
     let dadosComando;
     try {
+      // Adicionado log para ver o JSON bruto da OpenAI
+      console.log("Backend: Resposta JSON BRUTA da OpenAI:", extracaoOpenAI.choices[0].message.content);
       dadosComando = JSON.parse(extracaoOpenAI.choices[0].message.content);
     } catch (e) {
       console.error("Backend: Erro parse JSON da extração OpenAI:", e, extracaoOpenAI.choices[0].message.content);
@@ -192,20 +200,23 @@ export default async function handler(req, res) {
     console.log("Backend: Dados extraídos pela OpenAI:", dadosComando);
 
     // ETAPA 2: Lógica de Negócio e Supabase
-    // Se a IA indicou que precisa de clarificação, vamos pedir ao utilizador.
     if (dadosComando.mensagem_clarificacao_necessaria) {
       console.log("Backend: Clarificação necessária:", dadosComando.mensagem_clarificacao_necessaria);
-      // O contexto para a IA gerar a pergunta de clarificação
-      let contextoClarificacao = `O utilizador disse: "${comando}". Para prosseguir com a intenção de '${dadosComando.intencao}', preciso de mais informações: ${dadosComando.mensagem_clarificacao_necessaria}. Por favor, formule uma pergunta amigável e específica ao utilizador para obter estes detalhes.`;
+      let contextoClarificacao = `O utilizador disse: "${comando}". Parece que preciso de mais informações: ${dadosComando.mensagem_clarificacao_necessaria}. Por favor, formule uma pergunta amigável e específica ao utilizador para obter estes detalhes.`;
       if (dadosComando.intencao === "marcar_reuniao") {
            contextoClarificacao = `O utilizador quer marcar uma reunião e disse: "${comando}". Para continuar, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação.`;
       } else if (dadosComando.intencao === "cancelar_reuniao" && !dadosComando.id_reuniao) {
            contextoClarificacao = `O utilizador quer cancelar uma reunião e disse: "${comando}". Para encontrar a reunião correta, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação.`;
       } else if (dadosComando.intencao === "alterar_reuniao") {
-           contextoClarificacao = `O utilizador quer alterar uma reunião e disse: "${comando}". Para prosseguir, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação.`;
+           // Se for alterar e faltar o ID e também os detalhes da reunião alvo
+           if (!dadosComando.id_reuniao && !(dadosComando.pessoa_alvo && dadosComando.data_alvo && dadosComando.horario_alvo)) {
+                contextoClarificacao = `O utilizador quer alterar uma reunião e disse: "${comando}". Para identificar a reunião a ser alterada, preciso do ID dela ou dos detalhes completos (pessoa, data e hora) da reunião original. Além disso, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça todas as informações em falta.`;
+           } else { // Se identificou a reunião alvo mas faltam os novos dados
+                contextoClarificacao = `O utilizador quer alterar uma reunião e disse: "${comando}". Para prosseguir, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação.`;
+           }
       }
       mensagemParaFrontend = await gerarRespostaConversacional(contextoClarificacao);
-    } else { // Se não precisa de clarificação, processa a intenção
+    } else { 
       switch (dadosComando.intencao) {
         case "marcar_reuniao":
           if (dadosComando.pessoa_nova_reuniao && dadosComando.data_nova_reuniao && dadosComando.horario_novo_reuniao) {
@@ -235,13 +246,12 @@ export default async function handler(req, res) {
                 mensagemParaFrontend = await gerarRespostaConversacional(`A reunião com ${dadosComando.pessoa_nova_reuniao} para ${dataHoraConfirmacao} foi marcada com sucesso! Confirme para o utilizador de forma amigável e pergunte se pode ajudar em algo mais.`);
               }
             }
-          } else { // Este caso não deveria acontecer se mensagem_clarificacao_necessaria funcionar bem
+          } else { 
             mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para marcar uma reunião, mas faltam detalhes essenciais (pessoa, data ou hora). Peça as informações em falta. Comando original: "${comando}"`);
           }
           break;
 
         case "listar_reunioes":
-          // ... (lógica de listar existente)
           const { data: reunioes, error: erroListagem } = await supabase.from('reunioes').select('id, pessoa, data_hora').order('data_hora', { ascending: true });
           if (erroListagem) throw erroListagem;
           if (reunioes && reunioes.length > 0) {
@@ -253,7 +263,6 @@ export default async function handler(req, res) {
           break;
 
         case "cancelar_reuniao":
-          // ... (lógica de cancelar existente, já usa pessoa_alvo, data_alvo, horario_alvo)
           console.log("Backend: Intenção de cancelar reunião detectada.");
           let idParaCancelar = dadosComando.id_reuniao;
           let reuniaoCanceladaInfo = "";
@@ -302,13 +311,12 @@ export default async function handler(req, res) {
             } else {
               mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para cancelar uma reunião com ${dadosComando.pessoa_alvo} para ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}, mas não encontrei nenhuma reunião com esses detalhes. Peça para verificar ou fornecer o ID.`);
             }
-          } else { // Este caso não deveria acontecer se mensagem_clarificacao_necessaria funcionar bem
+          } else { 
             mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para cancelar uma reunião, mas não forneceu um ID nem detalhes suficientes (pessoa, data e hora da reunião a cancelar). Peça as informações necessárias. Comando: "${comando}"`);
           }
           break;
         
         case "alterar_reuniao":
-            // ... (lógica de alterar existente, já usa pessoa_alvo, data_alvo, horario_alvo e os novos dados)
             let idParaAlterarOriginal = dadosComando.id_reuniao;
             const pessoaAlvoOriginal = dadosComando.pessoa_alvo;
             const dataAlvoOriginal = dadosComando.data_alvo;
