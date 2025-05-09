@@ -306,10 +306,10 @@ export default async function handler(req, res) {
               reuniaoCanceladaInfo = `a reunião com ${reuniaoParaCancelar.pessoa} de ${dayjs(reuniaoParaCancelar.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`;
               mensagemParaFrontend = await gerarRespostaConversacional(`Confirme ao utilizador que ${reuniaoCanceladaInfo} foi cancelada com sucesso.`);
             } else if (reunioesEncontradas && reunioesEncontradas.length > 1) {
-              let listaAmbigua = reunioesEncontradas.map(r => `Com ${r.pessoa} em ${dayjs(r.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')} (ID: ${r.id})`).join("\n");
-              mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para cancelar uma reunião com ${dadosComando.pessoa_alvo} para ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}, mas encontrei várias reuniões. São elas:\n${listaAmbigua}\nPeça ao utilizador para especificar qual delas gostaria de cancelar, talvez usando o ID.`);
+              let listaAmbigua = reunioesEncontradas.map(r => `Com ${r.pessoa} em ${dayjs(r.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`).join("\n"); // Removido ID da desambiguação
+              mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para cancelar uma reunião com ${dadosComando.pessoa_alvo} para ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}, mas encontrei várias reuniões com estes detalhes:\n${listaAmbigua}\nPeça ao utilizador para ser mais específico ou confirmar qual delas gostaria de cancelar (ex: "a primeira", "a das 10h se houver horários diferentes na mesma data").`);
             } else {
-              mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para cancelar uma reunião com ${dadosComando.pessoa_alvo} para ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}, mas não encontrei nenhuma reunião com esses detalhes. Peça para verificar ou fornecer o ID.`);
+              mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para cancelar uma reunião com ${dadosComando.pessoa_alvo} para ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}, mas não encontrei nenhuma reunião com esses detalhes. Peça para verificar ou listar as reuniões.`);
             }
           } else { 
             mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para cancelar uma reunião, mas não forneceu um ID nem detalhes suficientes (pessoa, data e hora da reunião a cancelar). Peça as informações necessárias. Comando: "${comando}"`);
@@ -357,8 +357,8 @@ export default async function handler(req, res) {
                     idParaAlterarOriginal = reunioesParaAlterar[0].id; 
                     console.log("Backend: ID da reunião para alterar encontrado por descrição:", idParaAlterarOriginal);
                 } else if (reunioesParaAlterar && reunioesParaAlterar.length > 1) {
-                    let listaAmbiguaAlterar = reunioesParaAlterar.map(r => `Com ${pessoaAlvoOriginal} em ${dayjs(dataHoraAlvoParaAlterarUTC).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')} (ID: ${r.id})`).join("\n");
-                    mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei várias reuniões para ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal}. São elas:\n${listaAmbiguaAlterar}\nPreciso que especifique o ID da reunião que quer alterar.`);
+                    let listaAmbiguaAlterar = reunioesParaAlterar.map(r => `Com ${pessoaAlvoOriginal} em ${dayjs(dataHoraAlvoParaAlterarUTC).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`).join("\n"); // Removido ID
+                    mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei várias reuniões para ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal}. São elas:\n${listaAmbiguaAlterar}\nPreciso que especifique qual delas quer alterar (ex: "a primeira", "a das 10h").`);
                     break;
                 } else {
                     mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião com ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal} para alterar.`);
@@ -412,7 +412,7 @@ export default async function handler(req, res) {
             const pessoaNovaConfirmacao = updateData.pessoa;
             const dataHoraNovaConfirmacao = dayjs(updateData.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm');
 
-            mensagemParaFrontend = await gerarRespostaConversacional(`A reunião com ${pessoaAntiga} de ${dataHoraAntigaFormatada} (ID ${idParaAlterarOriginal}) foi alterada com sucesso para: Com ${pessoaNovaConfirmacao} em ${dataHoraNovaConfirmacao}. Confirme para o utilizador de forma clara.`);
+            mensagemParaFrontend = await gerarRespostaConversacional(`A reunião com ${pessoaAntiga} de ${dataHoraAntigaFormatada} foi alterada com sucesso para: Com ${pessoaNovaConfirmacao} em ${dataHoraNovaConfirmacao}. Confirme para o utilizador de forma clara.`);
             break;
 
         default: 
