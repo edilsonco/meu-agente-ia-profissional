@@ -161,26 +161,28 @@ export default async function handler(req, res) {
       - horario_novo_reuniao: Horário para a nova reunião (string ou null, ex: "15 horas", "10h30").
 
       // Para identificar uma reunião ALVO (para cancelar ou alterar SEM ID):
-      - pessoa_alvo: Nome da pessoa da reunião alvo (string ou null).
-      - data_alvo: Data da reunião alvo (string ou null).
-      - horario_alvo: Horário da reunião alvo (string ou null).
+      // Preencha estes campos se a intenção for cancelar ou alterar E o id_reuniao for null.
+      - pessoa_alvo: Nome da pessoa da reunião que o utilizador quer cancelar ou alterar (string ou null).
+      - data_alvo: Data da reunião que o utilizador quer cancelar ou alterar (string ou null).
+      - horario_alvo: Horário da reunião que o utilizador quer cancelar ou alterar (string ou null).
 
-      // Para os NOVOS dados de uma alteração:
-      - pessoa_alteracao: Novo nome da pessoa para a reunião a ser alterada (string ou null, se mencionado).
-      - data_alteracao: Nova data para a reunião a ser alterada (string ou null, se mencionado).
-      - horario_alteracao: Novo horário para a reunião a ser alterada (string ou null, se mencionado).
+      // Para os NOVOS dados de uma alteração (se a intenção for 'alterar_reuniao'):
+      // Preencha estes campos com os NOVOS detalhes que o utilizador mencionou para a alteração.
+      - pessoa_alteracao: NOVO nome da pessoa para a reunião (string ou null, se mencionado).
+      - data_alteracao: NOVA data para a reunião (string ou null, se mencionado).
+      - horario_alteracao: NOVO horário para a reunião (string ou null, se mencionado).
       
-      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial, descreva o que falta. (string ou null)
+      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial (ex: para marcar, falta data ou hora; para alterar, faltam os novos dados), descreva o que falta. (string ou null)
       
       Priorize o preenchimento de 'id_reuniao' se um número for claramente um ID.
-      Se a intenção for 'cancelar_reuniao' ou 'alterar_reuniao' e 'id_reuniao' for null, preencha 'pessoa_alvo', 'data_alvo', e 'horario_alvo' com os detalhes da reunião a ser afetada.
-      Se a intenção for 'marcar_reuniao', preencha 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'.
-      Se a intenção for 'alterar_reuniao', preencha 'pessoa_alteracao', 'data_alteracao', e 'horario_alteracao' com os novos dados, se fornecidos.
+      Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'.
+      Se a intenção for 'cancelar_reuniao' e 'id_reuniao' for null, foque em 'pessoa_alvo', 'data_alvo', e 'horario_alvo'.
+      Se a intenção for 'alterar_reuniao', foque em identificar a reunião alvo (via 'id_reuniao' ou 'pessoa_alvo', 'data_alvo', 'horario_alvo') E os novos dados ('pessoa_alteracao', 'data_alteracao', 'horario_alteracao').
       Responda APENAS com o objeto JSON.
     `;
     console.log("Backend: Enviando para OpenAI para extração...");
     const extracaoOpenAI = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo-0125", // Usar um modelo mais recente pode ajudar na extração
+      model: "gpt-3.5-turbo-0125", 
       messages: [{ role: "user", content: promptExtracao }],
       response_format: { type: "json_object" },
     });
@@ -303,7 +305,8 @@ export default async function handler(req, res) {
             const pessoaAlvoOriginal = dadosComando.pessoa_alvo;
             const dataAlvoOriginal = dadosComando.data_alvo;
             const horarioAlvoOriginal = dadosComando.horario_alvo;
-            const novosDados = { // Usar os novos campos do prompt
+            
+            const novosDados = {
                 pessoa: dadosComando.pessoa_alteracao,
                 data_relativa: dadosComando.data_alteracao,
                 horario_texto: dadosComando.horario_alteracao
@@ -339,7 +342,9 @@ export default async function handler(req, res) {
                     idParaAlterarOriginal = reunioesParaAlterar[0].id; 
                     console.log("Backend: ID da reunião para alterar encontrado por descrição:", idParaAlterarOriginal);
                 } else if (reunioesParaAlterar && reunioesParaAlterar.length > 1) {
-                    mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei várias reuniões para ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal}. Preciso que especifique o ID da reunião que quer alterar.`);
+                    // Se houver ambiguidade, pedir para o usuário especificar com ID.
+                    let listaAmbiguaAlterar = reunioesParaAlterar.map(r => `Com ${pessoaAlvoOriginal} em ${dayjs(dataHoraAlvoParaAlterarUTC).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')} (ID: ${r.id})`).join("\n");
+                    mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei várias reuniões para ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal}. São elas:\n${listaAmbiguaAlterar}\nPreciso que especifique o ID da reunião que quer alterar.`);
                     break;
                 } else {
                     mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião com ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal} para alterar.`);
@@ -369,6 +374,18 @@ export default async function handler(req, res) {
             if (novaDataHoraUTC) dadosUpdate.data_hora = novaDataHoraUTC.toISOString();
             if (novosDados.pessoa) dadosUpdate.pessoa = novosDados.pessoa;
 
+            // Antes de atualizar, buscar os dados atuais da reunião para referência na mensagem de confirmação
+            const { data: reuniaoAtual, error: erroBuscaAtual } = await supabase
+                .from('reunioes')
+                .select('pessoa, data_hora')
+                .eq('id', idParaAlterarOriginal)
+                .single();
+
+            if (erroBuscaAtual || !reuniaoAtual) {
+                mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião com ID ${idParaAlterarOriginal} para obter os detalhes antes de alterar.`);
+                break;
+            }
+
             const { data: updateData, error: erroUpdate } = await supabase.from('reunioes').update(dadosUpdate).match({ id: idParaAlterarOriginal }).select().single();
             
             if (erroUpdate || !updateData) {
@@ -377,9 +394,13 @@ export default async function handler(req, res) {
                  break;
             }
             
-            const dataHoraConfirmacao = dayjs(updateData.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm');
-            const pessoaConfirmacao = updateData.pessoa;
-            mensagemParaFrontend = await gerarRespostaConversacional(`A reunião (ID ${idParaAlterarOriginal}) foi alterada com sucesso para: Com ${pessoaConfirmacao} em ${dataHoraConfirmacao}. Confirme para o utilizador de forma clara.`);
+            const pessoaAntiga = reuniaoAtual.pessoa;
+            const dataHoraAntigaFormatada = dayjs(reuniaoAtual.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm');
+            
+            const pessoaNovaConfirmacao = updateData.pessoa;
+            const dataHoraNovaConfirmacao = dayjs(updateData.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm');
+
+            mensagemParaFrontend = await gerarRespostaConversacional(`A reunião com ${pessoaAntiga} de ${dataHoraAntigaFormatada} (ID ${idParaAlterarOriginal}) foi alterada com sucesso para: Com ${pessoaNovaConfirmacao} em ${dataHoraNovaConfirmacao}. Confirme para o utilizador de forma clara.`);
             break;
 
         default: 
