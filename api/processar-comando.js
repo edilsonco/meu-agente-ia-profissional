@@ -52,7 +52,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     dataBase = dataBase.add(1, 'day');
   } else {
     let dataParseada = null;
-    const formatosData = ['DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY', 'D MMMM<y_bin_46> /* Ano opcional */', 'D [de] MMMM<y_bin_46> /* Ano opcional */', 'D MMMM', 'D [de] MMMM'];
+    const formatosData = ['DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY', 'D MMMM YYYY', 'D [de] MMMM YYYY', 'D MMMM', 'D [de] MMMM'];
     for (const formato of formatosData) {
       dataParseada = dayjs(dataRelativa, formato, 'pt-br', true);
       if (dataParseada.isValid()) {
@@ -68,6 +68,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
       }
     }
     if (dataParseada && dataParseada.isValid()) {
+      // Aplicar ano, mês e dia da data parseada à data base (que está no fuso SP), mantendo a hora de referência
       dataBase = agoraEmSaoPaulo.year(dataParseada.year()).month(dataParseada.month()).date(dataParseada.date());
     } else {
       console.error("interpretarDataHora: Formato de data não reconhecido:", dataRelativa);
@@ -94,6 +95,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
       console.error("interpretarDataHora: Data/Hora final inválida em SP", dataHoraFinalEmSaoPaulo);
       return null;
   }
+  console.log("interpretarDataHora: Data/Hora final em São Paulo:", dataHoraFinalEmSaoPaulo.format());
   return dataHoraFinalEmSaoPaulo.utc();
 }
 
@@ -150,13 +152,13 @@ export default async function handler(req, res) {
       - data_alvo: Se a intenção for cancelar ou alterar e o ID não for dado, data da reunião alvo (string ou null).
       - horario_alvo: Se a intenção for cancelar ou alterar e o ID não for dado, horário da reunião alvo (string ou null).
       - novos_dados_alteracao: Se a intenção for 'alterar_reuniao', um objeto com {pessoa, data_relativa, horario_texto} para os novos dados, ou null.
-      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial, descreva o que falta. (string ou null)
+      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial (ex: para marcar, falta data ou hora), descreva o que falta. (string ou null)
       
       Responda APENAS com o objeto JSON.
     `;
     console.log("Backend: Enviando para OpenAI para extração...");
     const extracaoOpenAI = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo", // Considerar gpt-4-turbo para melhor extração se necessário
+      model: "gpt-3.5-turbo", 
       messages: [{ role: "user", content: promptExtracao }],
       response_format: { type: "json_object" },
     });
@@ -177,7 +179,6 @@ export default async function handler(req, res) {
     } else {
       switch (dadosComando.intencao) {
         case "marcar_reuniao":
-          // ... (lógica de marcar existente)
           if (dadosComando.pessoa && dadosComando.data_relativa && dadosComando.horario_texto) {
             const dataHoraUTC = interpretarDataHoraComDayjs(dadosComando.data_relativa, dadosComando.horario_texto);
             if (!dataHoraUTC) {
@@ -211,7 +212,6 @@ export default async function handler(req, res) {
           break;
 
         case "listar_reunioes":
-          // ... (lógica de listar existente)
           const { data: reunioes, error: erroListagem } = await supabase.from('reunioes').select('id, pessoa, data_hora').order('data_hora', { ascending: true });
           if (erroListagem) throw erroListagem;
           if (reunioes && reunioes.length > 0) {
@@ -228,7 +228,6 @@ export default async function handler(req, res) {
           let reuniaoCanceladaInfo = "";
 
           if (idParaCancelar && Number.isInteger(idParaCancelar) && idParaCancelar > 0) {
-            // Cancelamento por ID (como antes)
             const { data: reuniaoParaCancelar, error: erroBusca } = await supabase
               .from('reunioes')
               .select('pessoa, data_hora')
@@ -244,7 +243,6 @@ export default async function handler(req, res) {
             mensagemParaFrontend = await gerarRespostaConversacional(`Confirme ao utilizador que ${reuniaoCanceladaInfo} (ID ${idParaCancelar}) foi cancelada com sucesso.`);
 
           } else if (dadosComando.pessoa_alvo && dadosComando.data_alvo && dadosComando.horario_alvo) {
-            // Tentar cancelar por descrição
             console.log("Backend: Tentando cancelar por descrição:", dadosComando.pessoa_alvo, dadosComando.data_alvo, dadosComando.horario_alvo);
             const dataHoraAlvoUTC = interpretarDataHoraComDayjs(dadosComando.data_alvo, dadosComando.horario_alvo);
             if (!dataHoraAlvoUTC) {
@@ -279,12 +277,10 @@ export default async function handler(req, res) {
           break;
         
         case "alterar_reuniao":
-            // ... (lógica de alterar existente, pode ser adaptada similarmente ao cancelar)
             const idParaAlterar = dadosComando.id_reuniao;
             const novosDados = dadosComando.novos_dados_alteracao;
 
             if (!idParaAlterar || !Number.isInteger(idParaAlterar) || idParaAlterar <= 0) {
-                // TENTAR BUSCAR POR DESCRIÇÃO SE ID NÃO FORNECIDO E DETALHES DO ALVO EXISTIREM
                 if (dadosComando.pessoa_alvo && dadosComando.data_alvo && dadosComando.horario_alvo && novosDados && (novosDados.pessoa || (novosDados.data_relativa && novosDados.horario_texto))) {
                     console.log("Backend: Tentando encontrar reunião para alterar por descrição:", dadosComando.pessoa_alvo, dadosComando.data_alvo, dadosComando.horario_alvo);
                     const dataHoraAlvoParaAlterarUTC = interpretarDataHoraComDayjs(dadosComando.data_alvo, dadosComando.horario_alvo);
@@ -301,9 +297,8 @@ export default async function handler(req, res) {
                     if (erroBuscaAlterar) throw erroBuscaAlterar;
 
                     if (reunioesParaAlterar && reunioesParaAlterar.length === 1) {
-                        dadosComando.id_reuniao = reunioesParaAlterar[0].id; // Encontrou o ID!
+                        dadosComando.id_reuniao = reunioesParaAlterar[0].id; 
                         console.log("Backend: ID da reunião para alterar encontrado por descrição:", dadosComando.id_reuniao);
-                        // Prossegue com a lógica de alteração usando o ID encontrado
                     } else if (reunioesParaAlterar && reunioesParaAlterar.length > 1) {
                         mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei várias reuniões para ${dadosComando.pessoa_alvo} em ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}. Preciso que especifique o ID da reunião que quer alterar.`);
                         break;
@@ -316,7 +311,7 @@ export default async function handler(req, res) {
                     break;
                 }
             }
-            // Agora que temos o ID (seja fornecido ou encontrado)
+            
             if (!novosDados || (!novosDados.pessoa && !novosDados.data_relativa && !novosDados.horario_texto)) {
                 mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador quer alterar a reunião ID ${dadosComando.id_reuniao}, mas não disse o que alterar. Peça os novos detalhes (nova pessoa, nova data ou novo horário). Comando: "${comando}"`);
                 break;
