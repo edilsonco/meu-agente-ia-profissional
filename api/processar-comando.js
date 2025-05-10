@@ -45,8 +45,20 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   }
   const agoraEmSaoPaulo = dayjs().tz(TIMEZONE_REFERENCIA);
   let dataBase = agoraEmSaoPaulo;
-  const dataNorm = dataRelativa.toLowerCase().replace("-feira", ""); // Normaliza e remove "-feira"
-  const horarioNorm = horarioTexto.toLowerCase(); 
+  let dataNorm = dataRelativa.toLowerCase();
+  
+  // Tratar "próxima [dia da semana]" - remover "próxima" se presente
+  let ehProximaSemana = false;
+  if (dataNorm.startsWith("próxima ")) {
+      dataNorm = dataNorm.substring("próxima ".length);
+      ehProximaSemana = true;
+  }
+  dataNorm = dataNorm.replace("-feira", ""); // Normaliza e remove "-feira"
+  
+  let horarioProcessado = horarioTexto.toLowerCase();
+  // Remover prefixos comuns do horário como "umas ", "por volta das "
+  horarioProcessado = horarioProcessado.replace(/^(umas\s+|por volta d[ao]s\s+)/, '');
+
 
   const diasDaSemana = {
     domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6
@@ -57,25 +69,28 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     dataBase = dataBase.add(1, 'day');
   } else if (diasDaSemana[dataNorm] !== undefined) {
     const diaDesejado = diasDaSemana[dataNorm];
-    dataBase = agoraEmSaoPaulo.day(diaDesejado); // Define para o dia da semana na semana ATUAL
-    // Se o dia já passou nesta semana, avança para a próxima semana
-    if (dataBase.isBefore(agoraEmSaoPaulo, 'day')) {
+    dataBase = agoraEmSaoPaulo.day(diaDesejado); 
+    // Se o dia já passou nesta semana OU se explicitamente pediu "próxima", avança para a próxima semana
+    if (dataBase.isBefore(agoraEmSaoPaulo, 'day') || ehProximaSemana) { 
       dataBase = dataBase.add(1, 'week');
     }
     console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' interpretado como:`, dataBase.format());
   }
   else {
     let dataParseada = null;
+    // Formatos a tentar, incluindo aqueles com 'de' e ano opcional/explícito
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', 
-        'D MMMM', 'D [de] MMMM'
+        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', // Com ano explícito
+        'D MMMM', 'D [de] MMMM' // Sem ano explícito
     ];
 
     for (const formato of formatosData) {
-      dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
+      dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); // Modo estrito
       if (dataParseada.isValid()) {
+        // Se o formato não especifica o ano (ex: 'D MMMM') e o ano não está na string original
         if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
+            // Se a data parseada (considerando apenas dia/mês) for anterior a hoje, assume próximo ano
             let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
             if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
                 dataParseada = dataComAnoCorrente.add(1, 'year');
@@ -84,13 +99,12 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             }
         }
         console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format());
-        break; 
+        break; // Sai do loop se encontrar um formato válido
       }
     }
     if (dataParseada && dataParseada.isValid()) {
-      // Para datas explícitas, não baseamos na hora de "agoraEmSaoPaulo", mas sim no início do dia.
-      // A hora será adicionada depois.
-      dataBase = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA);
+      // Aplicar ano, mês e dia da data parseada à data base (que está no fuso SP), mantendo a hora de referência
+      dataBase = agoraEmSaoPaulo.year(dataParseada.year()).month(dataParseada.month()).date(dataParseada.date());
     } else {
       console.error("interpretarDataHora: Formato de data não reconhecido:", dataRelativa);
       return null;
@@ -98,12 +112,14 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   }
 
   let horas = 0, minutos = 0;
-  if (horarioNorm === "meio-dia") {
+  if (horarioProcessado === "meio-dia") { // Usar horarioProcessado
     horas = 12;
-  } else if (horarioNorm === "meia-noite") {
+    minutos = 0;
+  } else if (horarioProcessado === "meia-noite") { // Usar horarioProcessado
     horas = 0;
+    minutos = 0;
   } else {
-    const matchHorario = horarioTexto.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i); 
+    const matchHorario = horarioProcessado.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i); // Usar horarioProcessado
     if (matchHorario) {
       horas = parseInt(matchHorario[1], 10);
       minutos = matchHorario[2] ? parseInt(matchHorario[2], 10) : 0;
@@ -112,12 +128,11 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
           return null;
       }
     } else { 
-      console.error("interpretarDataHora: Formato de horário não reconhecido", horarioTexto);
+      console.error("interpretarDataHora: Formato de horário não reconhecido", horarioProcessado);
       return null; 
     }
   }
 
-  // dataBase já está no fuso de São Paulo
   const dataHoraFinalEmSaoPaulo = dataBase.hour(horas).minute(minutos).second(0).millisecond(0);
   if (!dataHoraFinalEmSaoPaulo.isValid()) {
       console.error("interpretarDataHora: Data/Hora final inválida em SP", dataHoraFinalEmSaoPaulo);
@@ -177,8 +192,8 @@ export default async function handler(req, res) {
       // Para marcar uma NOVA reunião:
       - tipo_compromisso_novo: Tipo de compromisso (ex: "almoço", "reunião", "café", "dentista"). Se não especificado, use "compromisso". (string ou null).
       - pessoa_nova_reuniao: Nome da pessoa para a nova reunião (string ou null).
-      - data_nova_reuniao: Data para a nova reunião (string ou null, ex: "hoje", "amanhã", "15/05/2025", "próxima segunda-feira", "segunda"). Tente interpretar datas relativas e textuais, incluindo dias da semana.
-      - horario_novo_reuniao: Horário para a nova reunião (string ou null, ex: "15 horas", "10h30", "meio-dia", "9 da manhã"). Tente interpretar horários textuais.
+      - data_nova_reuniao: Data para a nova reunião (string ou null, ex: "hoje", "amanhã", "15/05/2025", "próxima segunda-feira", "segunda"). Tente interpretar datas relativas e textuais, incluindo dias da semana. Se for "próxima [dia da semana]", extraia "[dia da semana]" e também indique que é "próxima".
+      - horario_novo_reuniao: Horário para a nova reunião (string ou null, ex: "15 horas", "10h30", "meio-dia", "9 da manhã", "umas 17:30"). Tente interpretar horários textuais, removendo palavras como "umas" ou "por volta das".
 
       // Para identificar uma reunião ALVO (para cancelar ou alterar SEM ID):
       - tipo_compromisso_alvo: Tipo do compromisso alvo (string ou null).
@@ -195,7 +210,7 @@ export default async function handler(req, res) {
       - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial para prosseguir (ex: para marcar, falta data ou hora; para cancelar por descrição, falta pessoa_alvo, data_alvo ou horario_alvo; para alterar, falta o que alterar ou os novos dados), descreva EXATAMENTE o que falta para essa intenção. (string ou null). Se todas as informações para a intenção principal estiverem presentes, este campo deve ser null.
       
       Priorize 'id_reuniao' se um número for claramente um ID.
-      Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'. Se o utilizador disser "amanhã ao meio-dia", 'data_nova_reuniao' deve ser "amanhã" e 'horario_novo_reuniao' deve ser "meio-dia". Se disser "segunda-feira às 16h", 'data_nova_reuniao' deve ser "segunda-feira" e 'horario_novo_reuniao' deve ser "16h".
+      Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'. Se o utilizador disser "amanhã ao meio-dia", 'data_nova_reuniao' deve ser "amanhã" e 'horario_novo_reuniao' deve ser "meio-dia". Se disser "segunda-feira às 16h", 'data_nova_reuniao' deve ser "segunda-feira" e 'horario_novo_reuniao' deve ser "16h". Se disser "próxima sexta-feira umas 17:30", 'data_nova_reuniao' deve ser "próxima sexta-feira" e 'horario_novo_reuniao' deve ser "17:30".
       Se a intenção for 'cancelar_reuniao' e 'id_reuniao' for null, foque em 'pessoa_alvo', 'data_alvo', e 'horario_alvo'.
       Se a intenção for 'alterar_reuniao', foque em identificar a reunião alvo (via 'id_reuniao' ou 'pessoa_alvo', 'data_alvo', 'horario_alvo') E os novos dados ('pessoa_alteracao', 'data_alteracao', 'horario_alteracao').
       Responda APENAS com o objeto JSON.
