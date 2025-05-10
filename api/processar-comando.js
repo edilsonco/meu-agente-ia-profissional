@@ -53,16 +53,19 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     dataBase = dataBase.add(1, 'day');
   } else {
     let dataParseada = null;
+    // Formatos a tentar, incluindo aqueles com 'de' e ano opcional/explícito
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', 
-        'D MMMM', 'D [de] MMMM'
+        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', // Com ano explícito
+        'D MMMM', 'D [de] MMMM' // Sem ano explícito
     ];
 
     for (const formato of formatosData) {
-      dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
+      dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); // Modo estrito
       if (dataParseada.isValid()) {
+        // Se o formato não especifica o ano (ex: 'D MMMM') e o ano não está na string original
         if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
+            // Se a data parseada (considerando apenas dia/mês) for anterior a hoje, assume próximo ano
             let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
             if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
                 dataParseada = dataComAnoCorrente.add(1, 'year');
@@ -71,10 +74,11 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             }
         }
         console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format());
-        break; 
+        break; // Sai do loop se encontrar um formato válido
       }
     }
     if (dataParseada && dataParseada.isValid()) {
+      // Aplicar ano, mês e dia da data parseada à data base (que está no fuso SP), mantendo a hora de referência
       dataBase = agoraEmSaoPaulo.year(dataParseada.year()).month(dataParseada.month()).date(dataParseada.date());
     } else {
       console.error("interpretarDataHora: Formato de data não reconhecido:", dataRelativa);
@@ -85,10 +89,12 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   let horas = 0, minutos = 0;
   if (horarioNorm === "meio-dia") {
     horas = 12;
+    minutos = 0;
   } else if (horarioNorm === "meia-noite") {
     horas = 0;
+    minutos = 0;
   } else {
-    const matchHorario = horarioTexto.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i); 
+    const matchHorario = horarioTexto.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i); // Usar horarioTexto original para regex
     if (matchHorario) {
       horas = parseInt(matchHorario[1], 10);
       minutos = matchHorario[2] ? parseInt(matchHorario[2], 10) : 0;
@@ -121,7 +127,7 @@ async function gerarRespostaConversacional(contextoParaIA) {
       messages: [
         {
           role: "system",
-          content: `Você é um assistente de agendamento virtual chamado "Agente IA", extremamente simpático, prestável e profissional. Responda sempre em português do Brasil. Seja claro e confirme as ações realizadas. Se houver um erro ou algo não for possível, explique de forma educada. Se precisar de mais informações para completar uma ação, peça-as de forma natural e específica. Use o tipo de compromisso (ex: almoço, café, reunião) quando apropriado na sua resposta. Nunca mencione IDs numéricos de reuniões diretamente para o utilizador nas suas respostas de confirmação ou listagem, a menos que seja explicitamente pedido para depuração ou se precisar de desambiguar entre múltiplas reuniões idênticas (neste caso, pode apresentar os detalhes completos, incluindo tipo, data e hora, para o utilizador escolher).`
+          content: `Você é um assistente de agendamento virtual chamado "Agente IA", extremamente simpático, prestável e profissional. Responda sempre em português do Brasil. Seja claro e confirme as ações realizadas. Se houver um erro ou algo não for possível, explique de forma educada. Se precisar de mais informações para completar uma ação, peça-as de forma natural e específica (ex: "Para que dia e hora seria?", "Com quem seria o compromisso?"). Não imponha formatos de data/hora ao pedir informações, apenas peça os detalhes em falta. Nunca mencione IDs numéricos de reuniões diretamente para o utilizador nas suas respostas de confirmação ou listagem, a menos que seja explicitamente pedido para depuração ou se precisar de desambiguar entre múltiplas reuniões idênticas (neste caso, pode apresentar os detalhes completos, incluindo tipo, data e hora, para o utilizador escolher).`
         },
         { role: "user", content: contextoParaIA }
       ],
@@ -155,14 +161,14 @@ export default async function handler(req, res) {
       Fuso horário de referência do utilizador: America/Sao_Paulo
 
       Analise o comando e extraia as seguintes informações em formato JSON:
-      - intencao: ("marcar_reuniao", "listar_reunioes", "cancelar_reuniao", "alterar_reuniao", "pedido_incompleto", "desconhecida").
-      - id_reuniao: ID NUMÉRICO da reunião se explicitamente mencionado (inteiro ou null).
+      - intencao: ("marcar_reuniao", "listar_reunioes", "cancelar_reuniao", "alterar_reuniao", "pedido_incompleto", "desconhecida"). Se a intenção for clara (ex: marcar) mas faltar informação crucial (ex: data ou hora), classifique como a intenção principal (ex: "marcar_reuniao") e preencha 'mensagem_clarificacao_necessaria'.
+      - id_reuniao: ID NUMÉRICO da reunião se explicitamente mencionado pelo utilizador (inteiro ou null).
       
       // Para marcar uma NOVA reunião:
-      - tipo_compromisso_novo: Tipo de compromisso (ex: "almoço", "reunião", "café", "dentista"). Se não especificado, use "compromisso" ou "reunião". (string ou null).
+      - tipo_compromisso_novo: Tipo de compromisso (ex: "almoço", "reunião", "café", "dentista"). Se não especificado, use "compromisso". (string ou null).
       - pessoa_nova_reuniao: Nome da pessoa para a nova reunião (string ou null).
-      - data_nova_reuniao: Data para a nova reunião (string ou null).
-      - horario_novo_reuniao: Horário para a nova reunião (string ou null).
+      - data_nova_reuniao: Data para a nova reunião (string ou null, ex: "hoje", "amanhã", "15/05/2025", "próxima segunda"). Tente interpretar datas relativas e textuais.
+      - horario_novo_reuniao: Horário para a nova reunião (string ou null, ex: "15 horas", "10h30", "meio-dia", "9 da manhã"). Tente interpretar horários textuais.
 
       // Para identificar uma reunião ALVO (para cancelar ou alterar SEM ID):
       - tipo_compromisso_alvo: Tipo do compromisso alvo (string ou null).
@@ -176,8 +182,12 @@ export default async function handler(req, res) {
       - data_alteracao: NOVA data (string ou null).
       - horario_alteracao: NOVO horário (string ou null).
       
-      - mensagem_clarificacao_necessaria: Se faltar informação essencial para a intenção principal, descreva EXATAMENTE o que falta. (string ou null).
+      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial para prosseguir (ex: para marcar, falta data ou hora; para cancelar por descrição, falta pessoa_alvo, data_alvo ou horario_alvo; para alterar, falta o que alterar ou os novos dados), descreva EXATAMENTE o que falta para essa intenção. (string ou null). Se todas as informações para a intenção principal estiverem presentes, este campo deve ser null.
       
+      Priorize 'id_reuniao' se um número for claramente um ID.
+      Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'. Se o utilizador disser "amanhã ao meio-dia", 'data_nova_reuniao' deve ser "amanhã" e 'horario_novo_reuniao' deve ser "meio-dia".
+      Se a intenção for 'cancelar_reuniao' e 'id_reuniao' for null, foque em 'pessoa_alvo', 'data_alvo', e 'horario_alvo'.
+      Se a intenção for 'alterar_reuniao', foque em identificar a reunião alvo (via 'id_reuniao' ou 'pessoa_alvo', 'data_alvo', 'horario_alvo') E os novos dados ('pessoa_alteracao', 'data_alteracao', 'horario_alteracao').
       Responda APENAS com o objeto JSON.
     `;
     console.log("Backend: Enviando para OpenAI para extração...");
@@ -202,14 +212,24 @@ export default async function handler(req, res) {
     if (dadosComando.mensagem_clarificacao_necessaria) {
       console.log("Backend: Clarificação necessária:", dadosComando.mensagem_clarificacao_necessaria);
       let contextoClarificacao = `O utilizador disse: "${comando}". Parece que preciso de mais informações: ${dadosComando.mensagem_clarificacao_necessaria}. Por favor, formule uma pergunta amigável e específica ao utilizador para obter estes detalhes.`;
-      // (Lógica de clarificação como antes)
+      if (dadosComando.intencao === "marcar_reuniao") {
+           contextoClarificacao = `O utilizador quer marcar um compromisso e disse: "${comando}". Para continuar, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação de forma natural.`;
+      } else if (dadosComando.intencao === "cancelar_reuniao" && !dadosComando.id_reuniao) {
+           contextoClarificacao = `O utilizador quer cancelar um compromisso e disse: "${comando}". Para encontrar o compromisso correto, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação.`;
+      } else if (dadosComando.intencao === "alterar_reuniao") {
+           if (!dadosComando.id_reuniao && !(dadosComando.pessoa_alvo && dadosComando.data_alvo && dadosComando.horario_alvo)) {
+                contextoClarificacao = `O utilizador quer alterar um compromisso e disse: "${comando}". Para identificar o compromisso a ser alterado, preciso do ID dele ou dos detalhes completos (pessoa, data e hora) do compromisso original. Além disso, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça todas as informações em falta.`;
+           } else { 
+                contextoClarificacao = `O utilizador quer alterar um compromisso e disse: "${comando}". Para prosseguir, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação.`;
+           }
+      }
       mensagemParaFrontend = await gerarRespostaConversacional(contextoClarificacao);
     } else { 
       switch (dadosComando.intencao) {
         case "marcar_reuniao":
           if (dadosComando.pessoa_nova_reuniao && dadosComando.data_nova_reuniao && dadosComando.horario_novo_reuniao) {
             const dataHoraUTC = interpretarDataHoraComDayjs(dadosComando.data_nova_reuniao, dadosComando.horario_novo_reuniao);
-            const tipoCompromisso = dadosComando.tipo_compromisso_novo || "compromisso"; // Padrão se não especificado
+            const tipoCompromisso = dadosComando.tipo_compromisso_novo || "compromisso"; 
 
             if (!dataHoraUTC) {
               mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para marcar um(a) ${tipoCompromisso} com ${dadosComando.pessoa_nova_reuniao} para "${dadosComando.data_nova_reuniao}" às "${dadosComando.horario_novo_reuniao}", mas não consegui interpretar a data/hora. Peça para tentar um formato diferente.`);
@@ -220,7 +240,7 @@ export default async function handler(req, res) {
               const dataHoraSupabase = dataHoraUTC.toISOString();
               const { data: conflitos, error: erroConflito } = await supabase
                 .from('reunioes')
-                .select('id, pessoa, data_hora, tipo_compromisso') // Adicionar tipo_compromisso
+                .select('id, pessoa, data_hora, tipo_compromisso') 
                 .eq('data_hora', dataHoraSupabase);
 
               if (erroConflito) throw erroConflito;
@@ -235,7 +255,7 @@ export default async function handler(req, res) {
                     pessoa: dadosComando.pessoa_nova_reuniao, 
                     data_hora: dataHoraSupabase, 
                     descricao_comando: comando,
-                    tipo_compromisso: tipoCompromisso // Guardar o tipo
+                    tipo_compromisso: tipoCompromisso 
                 }]).select();
                 if (error) throw error;
                 const dataHoraConfirmacao = dataHoraUTC.tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm');
@@ -252,7 +272,7 @@ export default async function handler(req, res) {
           if (erroListagem) throw erroListagem;
           if (reunioes && reunioes.length > 0) {
             let listaFormatadaParaIA = reunioes.map(r => {
-                const tipo = r.tipo_compromisso || "Compromisso"; // Padrão se nulo
+                const tipo = r.tipo_compromisso || "Compromisso"; 
                 return `${tipo.charAt(0).toUpperCase() + tipo.slice(1)} com ${r.pessoa} em ${dayjs(r.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`;
             }).join("\n");
             mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para listar os compromissos. Aqui estão eles:\n${listaFormatadaParaIA}\nApresente esta lista de forma clara e amigável.`);
@@ -306,12 +326,11 @@ export default async function handler(req, res) {
           break;
         
         case "alterar_reuniao":
-            // (Lógica de alterar - pode ser refatorada similarmente ao cancelar para buscar por descrição)
-            // Por simplicidade, vamos manter a exigência de ID para alterar por agora, ou refinar em outro passo.
             let idParaAlterarOriginal = dadosComando.id_reuniao;
-            const pessoaAlvoOriginal = dadosComando.pessoa_alvo; // Para buscar se ID não fornecido
+            const pessoaAlvoOriginal = dadosComando.pessoa_alvo; 
             const dataAlvoOriginal = dadosComando.data_alvo;
             const horarioAlvoOriginal = dadosComando.horario_alvo;
+            const tipoAlvoOriginal = dadosComando.tipo_compromisso_alvo; 
             
             const novosDados = {
                 tipo_compromisso: dadosComando.tipo_compromisso_alteracao,
@@ -336,18 +355,21 @@ export default async function handler(req, res) {
                     mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui interpretar a data/hora do compromisso que quer alterar ("${dataAlvoOriginal}" às "${horarioAlvoOriginal}").`);
                     break;
                 }
-                const { data: reunioesParaAlterar, error: erroBuscaAlterar } = await supabase
+                let queryBusca = supabase
                     .from('reunioes')
                     .select('id')
                     .eq('pessoa', pessoaAlvoOriginal)
                     .eq('data_hora', dataHoraAlvoParaAlterarUTC.toISOString());
+                if(tipoAlvoOriginal) queryBusca = queryBusca.eq('tipo_compromisso', tipoAlvoOriginal);
+
+                const { data: reunioesParaAlterar, error: erroBuscaAlterar } = await queryBusca;
                 
                 if (erroBuscaAlterar) throw erroBuscaAlterar;
                 if (reunioesParaAlterar && reunioesParaAlterar.length === 1) {
                     idParaAlterarOriginal = reunioesParaAlterar[0].id; 
                 } else if (reunioesParaAlterar && reunioesParaAlterar.length > 1) {
-                    let listaAmbiguaAlterar = reunioesParaAlterar.map(r => `Compromisso com ${pessoaAlvoOriginal} em ${dayjs(dataHoraAlvoParaAlterarUTC).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`).join("\n"); 
-                    mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei vários compromissos para ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal}. São eles:\n${listaAmbiguaAlterar}\nPreciso que especifique qual deles quer alterar (ex: "o primeiro", "o das 10h").`);
+                    let listaAmbiguaAlterar = reunioesParaAlterar.map(r => `${r.tipo_compromisso || 'Compromisso'} com ${pessoaAlvoOriginal} em ${dayjs(dataHoraAlvoParaAlterarUTC).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`).join("\n"); 
+                    mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei vários compromissos para ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal}. São eles:\n${listaAmbiguaAlterar}\nPreciso que especifique qual deles quer alterar (ex: "o primeiro", "o almoço das 10h").`);
                     break;
                 } else {
                     mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei o compromisso com ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal} para alterar.`);
