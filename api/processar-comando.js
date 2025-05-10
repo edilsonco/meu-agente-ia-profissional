@@ -46,6 +46,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   const agoraEmSaoPaulo = dayjs().tz(TIMEZONE_REFERENCIA);
   let dataBase = agoraEmSaoPaulo;
   const dataNorm = dataRelativa.toLowerCase();
+  const horarioNorm = horarioTexto.toLowerCase(); // Normalizar horário também
 
   if (dataNorm === "hoje") { /* OK */ } 
   else if (dataNorm === "amanhã" || dataNorm === "amanha") {
@@ -86,17 +87,25 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   }
 
   let horas = 0, minutos = 0;
-  const matchHorario = horarioTexto.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i);
-  if (matchHorario) {
-    horas = parseInt(matchHorario[1], 10);
-    minutos = matchHorario[2] ? parseInt(matchHorario[2], 10) : 0;
-    if (horas < 0 || horas > 23 || minutos < 0 || minutos > 59) {
-        console.error("interpretarDataHora: Horas/minutos inválidos", {horas, minutos});
-        return null;
+  if (horarioNorm === "meio-dia") {
+    horas = 12;
+    minutos = 0;
+  } else if (horarioNorm === "meia-noite") {
+    horas = 0;
+    minutos = 0;
+  } else {
+    const matchHorario = horarioTexto.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i); // Usar horarioTexto original para regex
+    if (matchHorario) {
+      horas = parseInt(matchHorario[1], 10);
+      minutos = matchHorario[2] ? parseInt(matchHorario[2], 10) : 0;
+      if (horas < 0 || horas > 23 || minutos < 0 || minutos > 59) {
+          console.error("interpretarDataHora: Horas/minutos inválidos", {horas, minutos});
+          return null;
+      }
+    } else { 
+      console.error("interpretarDataHora: Formato de horário não reconhecido", horarioTexto);
+      return null; 
     }
-  } else { 
-    console.error("interpretarDataHora: Formato de horário não reconhecido", horarioTexto);
-    return null; 
   }
 
   const dataHoraFinalEmSaoPaulo = dataBase.hour(horas).minute(minutos).second(0).millisecond(0);
@@ -157,8 +166,8 @@ export default async function handler(req, res) {
       
       // Para marcar uma NOVA reunião:
       - pessoa_nova_reuniao: Nome da pessoa para a nova reunião (string ou null).
-      - data_nova_reuniao: Data para a nova reunião (string ou null, ex: "hoje", "15/05/2025").
-      - horario_novo_reuniao: Horário para a nova reunião (string ou null, ex: "15 horas", "10h30").
+      - data_nova_reuniao: Data para a nova reunião (string ou null, ex: "hoje", "amanhã", "15/05/2025", "próxima segunda"). Tente interpretar datas relativas e textuais.
+      - horario_novo_reuniao: Horário para a nova reunião (string ou null, ex: "15 horas", "10h30", "meio-dia", "9 da manhã"). Tente interpretar horários textuais.
 
       // Para identificar uma reunião ALVO (para cancelar ou alterar SEM ID):
       // Preencha estes campos se a intenção for cancelar ou alterar E o id_reuniao for null.
@@ -174,7 +183,7 @@ export default async function handler(req, res) {
       
       - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial para prosseguir (ex: para marcar, falta data ou hora; para cancelar por descrição, falta pessoa_alvo, data_alvo ou horario_alvo; para alterar, falta o que alterar ou os novos dados), descreva EXATAMENTE o que falta para essa intenção. (string ou null). Se todas as informações para a intenção principal estiverem presentes, este campo deve ser null.
       
-      Priorize o preenchimento de 'id_reuniao' se um número for claramente um ID.
+      Priorize 'id_reuniao' se um número for claramente um ID.
       Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'.
       Se a intenção for 'cancelar_reuniao' e 'id_reuniao' for null, foque em 'pessoa_alvo', 'data_alvo', e 'horario_alvo'.
       Se a intenção for 'alterar_reuniao', foque em identificar a reunião alvo (via 'id_reuniao' ou 'pessoa_alvo', 'data_alvo', 'horario_alvo') E os novos dados ('pessoa_alteracao', 'data_alteracao', 'horario_alteracao').
@@ -189,7 +198,6 @@ export default async function handler(req, res) {
 
     let dadosComando;
     try {
-      // Adicionado log para ver o JSON bruto da OpenAI
       console.log("Backend: Resposta JSON BRUTA da OpenAI:", extracaoOpenAI.choices[0].message.content);
       dadosComando = JSON.parse(extracaoOpenAI.choices[0].message.content);
     } catch (e) {
@@ -208,10 +216,9 @@ export default async function handler(req, res) {
       } else if (dadosComando.intencao === "cancelar_reuniao" && !dadosComando.id_reuniao) {
            contextoClarificacao = `O utilizador quer cancelar uma reunião e disse: "${comando}". Para encontrar a reunião correta, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação.`;
       } else if (dadosComando.intencao === "alterar_reuniao") {
-           // Se for alterar e faltar o ID e também os detalhes da reunião alvo
            if (!dadosComando.id_reuniao && !(dadosComando.pessoa_alvo && dadosComando.data_alvo && dadosComando.horario_alvo)) {
                 contextoClarificacao = `O utilizador quer alterar uma reunião e disse: "${comando}". Para identificar a reunião a ser alterada, preciso do ID dela ou dos detalhes completos (pessoa, data e hora) da reunião original. Além disso, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça todas as informações em falta.`;
-           } else { // Se identificou a reunião alvo mas faltam os novos dados
+           } else { 
                 contextoClarificacao = `O utilizador quer alterar uma reunião e disse: "${comando}". Para prosseguir, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação.`;
            }
       }
@@ -357,7 +364,7 @@ export default async function handler(req, res) {
                     idParaAlterarOriginal = reunioesParaAlterar[0].id; 
                     console.log("Backend: ID da reunião para alterar encontrado por descrição:", idParaAlterarOriginal);
                 } else if (reunioesParaAlterar && reunioesParaAlterar.length > 1) {
-                    let listaAmbiguaAlterar = reunioesParaAlterar.map(r => `Com ${pessoaAlvoOriginal} em ${dayjs(dataHoraAlvoParaAlterarUTC).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`).join("\n"); // Removido ID
+                    let listaAmbiguaAlterar = reunioesParaAlterar.map(r => `Com ${pessoaAlvoOriginal} em ${dayjs(dataHoraAlvoParaAlterarUTC).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`).join("\n"); 
                     mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei várias reuniões para ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal}. São elas:\n${listaAmbiguaAlterar}\nPreciso que especifique qual delas quer alterar (ex: "a primeira", "a das 10h").`);
                     break;
                 } else {
