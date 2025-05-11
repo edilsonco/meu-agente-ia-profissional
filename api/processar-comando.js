@@ -62,39 +62,25 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6
   };
 
-  if (dataNorm === "hoje") { 
-    // dataBase já é hoje em São Paulo
-  } 
+  if (dataNorm === "hoje") { /* OK */ } 
   else if (dataNorm === "amanhã" || dataNorm === "amanha") {
     dataBase = dataBase.add(1, 'day');
   } else if (diasDaSemana[dataNorm] !== undefined) {
     const diaDesejado = diasDaSemana[dataNorm];
-    let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); 
-
-    if (ehProximaSemana) {
-        // Se o dia calculado já está na próxima semana em relação a 'agora', não precisa adicionar mais uma semana.
-        // Mas se o dia calculado é hoje ou um dia futuro na semana atual, precisa adicionar uma semana.
-        if (dataCalculada.isSame(agoraEmSaoPaulo, 'day') || dataCalculada.isAfter(agoraEmSaoPaulo, 'day')) {
-            dataCalculada = dataCalculada.add(1, 'week');
-        }
-        // Se .day() retornou um dia que já passou na semana atual (e portanto já está na "próxima" semana),
-        // e "próxima" foi dito, então está correto.
-    } else { // Não disse "próxima"
-        // Se o dia calculado por .day() for anterior a hoje (ex: hoje é Sábado, pediu "sexta"),
-        // dayjs já o coloca na próxima semana.
-        if (dataCalculada.isBefore(agoraEmSaoPaulo, 'day')) {
-             dataCalculada = dataCalculada.add(1, 'week');
-        }
+    dataBase = agoraEmSaoPaulo.day(diaDesejado); 
+    if (dataBase.isBefore(agoraEmSaoPaulo, 'day') || ehProximaSemana) { 
+      dataBase = dataBase.add(1, 'week');
     }
-    dataBase = dataCalculada;
     console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' interpretado como:`, dataBase.format());
   }
   else {
     let dataParseada = null;
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', 
-        'D MMMM', 'D [de] MMMM' 
+        'D MMMM<y_bin_46> /* Ano opcional/explícito */', 
+        'D [de] MMMM [de]YYYY', // Com ano explícito
+        'D MMMM', 
+        'D [de] MMMM' // Sem ano explícito
     ];
 
     for (const formato of formatosData) {
