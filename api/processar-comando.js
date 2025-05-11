@@ -415,8 +415,22 @@ export default async function handler(req, res) {
                      break;
                 }
                 dadosUpdate.data_hora = novaDataHoraUTC.toISOString();
-            } else if ((novosDados.data_relativa && novosDados.data_relativa !== "manter") || (novosDados.horario_texto && novosDados.horario_texto !== "manter")) { 
-                 // Se forneceu só nova data ou só nova hora (e não é "manter"), mas não ambos
+            } else if (novosDados.data_relativa === "manter" && novosDados.horario_texto && novosDados.horario_texto !== "manter") {
+                // Manter data, alterar hora
+                const { data: reuniaoParaPegarData, error: erroBuscaDataOriginal } = await supabase.from('reunioes').select('data_hora').eq('id', idParaAlterarOriginal).single();
+                if (erroBuscaDataOriginal || !reuniaoParaPegarData) { mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião ID ${idParaAlterarOriginal} para buscar a data original.`); break; }
+                const dataOriginalParaManter = dayjs(reuniaoParaPegarData.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY'); // Formato para interpretarDataHoraComDayjs
+                novaDataHoraUTC = interpretarDataHoraComDayjs(dataOriginalParaManter, novosDados.horario_texto); 
+                if (novaDataHoraUTC) dadosUpdate.data_hora = novaDataHoraUTC.toISOString(); else { mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui interpretar o novo horário "${novosDados.horario_texto}" para a alteração.`); break; }
+            } else if (novosDados.horario_texto === "manter" && novosDados.data_relativa && novosDados.data_relativa !== "manter") {
+                // Manter hora, alterar data
+                const { data: reuniaoParaPegarHora, error: erroBuscaHoraOriginal } = await supabase.from('reunioes').select('data_hora').eq('id', idParaAlterarOriginal).single();
+                if (erroBuscaHoraOriginal || !reuniaoParaPegarHora) { mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião ID ${idParaAlterarOriginal} para buscar o horário original.`); break; }
+                const horarioOriginalParaManter = dayjs(reuniaoParaPegarHora.data_hora).tz(TIMEZONE_REFERENCIA).format('HH:mm'); // Formato para interpretarDataHoraComDayjs
+                novaDataHoraUTC = interpretarDataHoraComDayjs(novosDados.data_relativa, horarioOriginalParaManter); 
+                if (novaDataHoraUTC) dadosUpdate.data_hora = novaDataHoraUTC.toISOString(); else { mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui interpretar a nova data "${novosDados.data_relativa}" para a alteração.`); break; }
+            } else if ((novosDados.data_relativa && novosDados.data_relativa !== "manter" && (!novosDados.horario_texto || novosDados.horario_texto === "manter")) || 
+                       (novosDados.horario_texto && novosDados.horario_texto !== "manter" && (!novosDados.data_relativa || novosDados.data_relativa === "manter"))) { 
                  mensagemParaFrontend = await gerarRespostaConversacional(`Para alterar a data/hora do compromisso ID ${idParaAlterarOriginal}, preciso da nova data E do novo horário, ou que indique para manter um deles. Você forneceu: Data="${novosDados.data_relativa}", Hora="${novosDados.horario_texto}". Peça a informação em falta.`);
                  break;
             }
@@ -428,15 +442,10 @@ export default async function handler(req, res) {
                 dadosUpdate.tipo_compromisso = novosDados.tipo_compromisso;
             }
 
-            // Se dadosUpdate estiver vazio após processar data/hora e outros campos, significa que só pediu para "manter"
-            if (Object.keys(dadosUpdate).length === 0 && 
-                (novosDados.data_relativa === "manter" || !novosDados.data_relativa) &&
-                (novosDados.horario_texto === "manter" || !novosDados.horario_texto) &&
-                !novosDados.pessoa && !novosDados.tipo_compromisso) {
+            if (Object.keys(dadosUpdate).length === 0) {
                  mensagemParaFrontend = await gerarRespostaConversacional(`Parece que não especificou nenhuma alteração para o compromisso ID ${idParaAlterarOriginal}. O que gostaria de mudar?`);
                  break;
             }
-
 
             const { data: reuniaoAtual, error: erroBuscaAtual } = await supabase
                 .from('reunioes')
