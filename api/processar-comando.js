@@ -204,13 +204,13 @@ export default async function handler(req, res) {
           - Para 'cancelar_reuniao' sem id_reuniao: faltar pessoa_alvo OU data_alvo OU horario_alvo.
           - Para 'alterar_reuniao':
               - Se faltar id_reuniao E (faltar pessoa_alvo OU data_alvo OU horario_alvo para identificar a reunião original).
-              - OU se, após identificar a reunião alvo, faltar PELO MENOS UM dos novos dados (pessoa_alteracao, tipo_compromisso_alteracao) E NEM data_alteracao NEM horario_alteracao forem "manter" ou preenchidos com novos valores. (Ex: "alterar reuniao com X para Y", sem dizer o que é Y).
+              - OU se, após identificar a reunião alvo, faltar PELO MENOS UM dos novos dados (pessoa_alteracao, tipo_compromisso_alteracao) E (data_alteracao NÃO é "manter" E horario_alteracao NÃO é "manter") E (data_alteracao é null OU horario_alteracao é null).
           Descreva EXATAMENTE o que falta. Caso contrário, deixe null.
       
       Priorize 'id_reuniao' se um número for claramente um ID.
       Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'.
       Se a intenção for 'cancelar_reuniao' e 'id_reuniao' for null, foque em 'pessoa_alvo', 'data_alvo', e 'horario_alvo'.
-      Se a intenção for 'alterar_reuniao', foque em identificar a reunião alvo (via 'id_reuniao' ou 'pessoa_alvo', 'data_alvo', 'horario_alvo') E os novos dados ('pessoa_alteracao', 'data_alteracao', 'horario_alteracao'). Se para 'data_alteracao' ou 'horario_alteracao' o utilizador indicar para manter o original, preencha o campo correspondente com "manter". Se apenas um novo detalhe for fornecido (ex: só nova pessoa), os outros campos de alteração (data_alteracao, horario_alteracao) devem ser "manter" se o utilizador disse "mesma data/horário", ou null caso contrário.
+      Se a intenção for 'alterar_reuniao', foque em identificar a reunião alvo (via 'id_reuniao' ou 'pessoa_alvo', 'data_alvo', 'horario_alvo') E os novos dados ('pessoa_alteracao', 'data_alteracao', 'horario_alteracao'). Se para 'data_alteracao' ou 'horario_alteracao' o utilizador indicar para manter o original, preencha o campo correspondente com "manter". Se apenas um novo detalhe for fornecido (ex: só nova pessoa) e o utilizador indicar "na mesma data e horário", data_alteracao e horario_alteracao devem ser "manter".
       Responda APENAS com o objeto JSON.
     `;
     console.log("Backend: Enviando para OpenAI para extração...");
@@ -367,7 +367,6 @@ export default async function handler(req, res) {
                 break;
             }
             
-            // Verifica se PELO MENOS UM novo dado foi fornecido para alteração
             if (!novosDados.pessoa && 
                 (novosDados.data_relativa !== "manter" && !novosDados.data_relativa) && 
                 (novosDados.horario_texto !== "manter" && !novosDados.horario_texto) && 
@@ -407,7 +406,6 @@ export default async function handler(req, res) {
             let novaDataHoraUTC = null;
             const dadosUpdate = {};
 
-            // Lógica para novos dados de data/hora
             if (novosDados.data_relativa && novosDados.data_relativa !== "manter" && novosDados.horario_texto && novosDados.horario_texto !== "manter") {
                 novaDataHoraUTC = interpretarDataHoraComDayjs(novosDados.data_relativa, novosDados.horario_texto);
                 if (!novaDataHoraUTC) {
@@ -421,14 +419,12 @@ export default async function handler(req, res) {
                 }
                 dadosUpdate.data_hora = novaDataHoraUTC.toISOString();
             } else if (novosDados.data_relativa === "manter" && novosDados.horario_texto && novosDados.horario_texto !== "manter") {
-                // Manter data, alterar hora
                 const { data: reuniaoParaPegarData, error: erroBuscaDataOriginal } = await supabase.from('reunioes').select('data_hora').eq('id', idParaAlterarOriginal).single();
                 if (erroBuscaDataOriginal || !reuniaoParaPegarData) { mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião ID ${idParaAlterarOriginal} para buscar a data original.`); break; }
                 const dataOriginalParaManter = dayjs(reuniaoParaPegarData.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY'); 
                 novaDataHoraUTC = interpretarDataHoraComDayjs(dataOriginalParaManter, novosDados.horario_texto); 
                 if (novaDataHoraUTC) dadosUpdate.data_hora = novaDataHoraUTC.toISOString(); else { mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui interpretar o novo horário "${novosDados.horario_texto}" para a alteração.`); break; }
             } else if (novosDados.horario_texto === "manter" && novosDados.data_relativa && novosDados.data_relativa !== "manter") {
-                // Manter hora, alterar data
                 const { data: reuniaoParaPegarHora, error: erroBuscaHoraOriginal } = await supabase.from('reunioes').select('data_hora').eq('id', idParaAlterarOriginal).single();
                 if (erroBuscaHoraOriginal || !reuniaoParaPegarHora) { mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião ID ${idParaAlterarOriginal} para buscar o horário original.`); break; }
                 const horarioOriginalParaManter = dayjs(reuniaoParaPegarHora.data_hora).tz(TIMEZONE_REFERENCIA).format('HH:mm'); 
@@ -436,8 +432,6 @@ export default async function handler(req, res) {
                 if (novaDataHoraUTC) dadosUpdate.data_hora = novaDataHoraUTC.toISOString(); else { mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui interpretar a nova data "${novosDados.data_relativa}" para a alteração.`); break; }
             } else if ((novosDados.data_relativa && novosDados.data_relativa !== "manter" && (!novosDados.horario_texto || novosDados.horario_texto === "manter")) || 
                        (novosDados.horario_texto && novosDados.horario_texto !== "manter" && (!novosDados.data_relativa || novosDados.data_relativa === "manter"))) { 
-                 // Se forneceu SÓ nova data ou SÓ nova hora (e não é "manter"), mas não ambos
-                 // OU se um é "manter" e o outro é null/vazio (não "manter")
                  if ( (novosDados.data_relativa && novosDados.data_relativa !== "manter" && !novosDados.horario_texto) || 
                       (novosDados.horario_texto && novosDados.horario_texto !== "manter" && !novosDados.data_relativa) ) {
                     mensagemParaFrontend = await gerarRespostaConversacional(`Para alterar a data/hora do compromisso ID ${idParaAlterarOriginal}, preciso da nova data E do novo horário. Você forneceu: Data="${novosDados.data_relativa}", Hora="${novosDados.horario_texto}". Peça a informação em falta.`);
@@ -459,7 +453,6 @@ export default async function handler(req, res) {
                  mensagemParaFrontend = await gerarRespostaConversacional(`Parece que não especificou nenhuma alteração para o compromisso ID ${idParaAlterarOriginal}. O que gostaria de mudar?`);
                  break;
             }
-
 
             const { data: reuniaoAtual, error: erroBuscaAtual } = await supabase
                 .from('reunioes')
