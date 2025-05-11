@@ -68,27 +68,34 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   else if (dataNorm === "amanhã" || dataNorm === "amanha") {
     dataBase = agoraEmSaoPaulo.add(1, 'day');
   } else if (diasDaSemana[dataNorm] !== undefined) {
-    const diaDesejado = diasDaSemana[dataNorm];
+    const diaDesejado = diasDaSemana[dataNorm]; // 0 (Dom) a 6 (Sab) para dayjs default
     let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); 
 
+    // Se o utilizador disse "próxima [dia da semana]"
     if (ehProximaSemana) {
+        // Se o dia calculado por .day() for hoje ou um dia futuro na semana atual,
+        // então "próxima" significa a semana seguinte a essa.
         if (dataCalculada.isSame(agoraEmSaoPaulo, 'day') || dataCalculada.isAfter(agoraEmSaoPaulo, 'day')) {
             dataCalculada = dataCalculada.add(1, 'week');
         }
-    } else {
+        // Se .day() já retornou um dia na próxima semana (porque o dia na semana atual já passou),
+        // e "próxima" foi dito, então já está correto (não precisa adicionar outra semana).
+    } else { // Não disse "próxima"
+        // Se o dia calculado for anterior a hoje (dayjs.day() pode retornar dia da semana anterior),
+        // avançamos para a próxima ocorrência desse dia.
         if (dataCalculada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
-            dataCalculada = dataCalculada.add(1, 'week'); 
+            dataCalculada = dataCalculada.add(1, 'week');
         }
     }
     dataBase = dataCalculada;
     console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' interpretado como:`, dataBase.format('YYYY-MM-DD'));
   }
-  else { 
+  else { // Datas explícitas
     let dataParseada = null;
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', 
-        'D MMMM', 'D [de] MMMM' 
+        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', // Com ano explícito
+        'D MMMM', 'D [de] MMMM' // Sem ano explícito
     ];
 
     for (const formato of formatosData) {
@@ -103,6 +110,8 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             }
         }
         console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
+        // Para datas explícitas, usamos a data parseada diretamente, não 'agoraEmSaoPaulo' como base para dia/mês/ano
+        // mas precisamos garantir que está no fuso horário correto antes de aplicar horas
         dataBase = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA); 
         break; 
       }
@@ -133,6 +142,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     }
   }
 
+  // dataBase já está no fuso de São Paulo e com a data correta
   const dataHoraFinalEmSaoPaulo = dataBase.hour(horas).minute(minutos).second(0).millisecond(0);
   if (!dataHoraFinalEmSaoPaulo.isValid()) {
       console.error("interpretarDataHora: Data/Hora final inválida em SP", dataHoraFinalEmSaoPaulo);
@@ -428,14 +438,12 @@ export default async function handler(req, res) {
                 }
                 dadosUpdate.data_hora = novaDataHoraUTC.toISOString();
             } else if (novosDados.data_relativa === "manter" && novosDados.horario_texto && novosDados.horario_texto !== "manter") {
-                // Manter data, alterar hora
                 const { data: reuniaoParaPegarData, error: erroBuscaDataOriginal } = await supabase.from('reunioes').select('data_hora').eq('id', idParaAlterarOriginal).single();
                 if (erroBuscaDataOriginal || !reuniaoParaPegarData) { mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião ID ${idParaAlterarOriginal} para buscar a data original.`); break; }
                 const dataOriginalParaManter = dayjs(reuniaoParaPegarData.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY'); 
                 novaDataHoraUTC = interpretarDataHoraComDayjs(dataOriginalParaManter, novosDados.horario_texto); 
                 if (novaDataHoraUTC) dadosUpdate.data_hora = novaDataHoraUTC.toISOString(); else { mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui interpretar o novo horário "${novosDados.horario_texto}" para a alteração.`); break; }
             } else if (novosDados.horario_texto === "manter" && novosDados.data_relativa && novosDados.data_relativa !== "manter") {
-                // Manter hora, alterar data
                 const { data: reuniaoParaPegarHora, error: erroBuscaHoraOriginal } = await supabase.from('reunioes').select('data_hora').eq('id', idParaAlterarOriginal).single();
                 if (erroBuscaHoraOriginal || !reuniaoParaPegarHora) { mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião ID ${idParaAlterarOriginal} para buscar o horário original.`); break; }
                 const horarioOriginalParaManter = dayjs(reuniaoParaPegarHora.data_hora).tz(TIMEZONE_REFERENCIA).format('HH:mm'); 
