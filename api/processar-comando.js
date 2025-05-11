@@ -442,10 +442,14 @@ export default async function handler(req, res) {
                 dadosUpdate.tipo_compromisso = novosDados.tipo_compromisso;
             }
 
-            if (Object.keys(dadosUpdate).length === 0) {
+            if (Object.keys(dadosUpdate).length === 0 && 
+                (novosDados.data_relativa === "manter" || !novosDados.data_relativa) &&
+                (novosDados.horario_texto === "manter" || !novosDados.horario_texto) &&
+                !novosDados.pessoa && !novosDados.tipo_compromisso) {
                  mensagemParaFrontend = await gerarRespostaConversacional(`Parece que não especificou nenhuma alteração para o compromisso ID ${idParaAlterarOriginal}. O que gostaria de mudar?`);
                  break;
             }
+
 
             const { data: reuniaoAtual, error: erroBuscaAtual } = await supabase
                 .from('reunioes')
