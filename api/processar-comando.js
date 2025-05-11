@@ -179,14 +179,14 @@ export default async function handler(req, res) {
       Fuso horário de referência do utilizador: America/Sao_Paulo
 
       Analise o comando e extraia as seguintes informações em formato JSON:
-      - intencao: ("marcar_reuniao", "listar_reunioes", "cancelar_reuniao", "alterar_reuniao", "pedido_incompleto", "desconhecida"). Se a intenção for clara (ex: marcar) mas faltar informação crucial (ex: data ou hora), classifique como a intenção principal (ex: "marcar_reuniao") e preencha 'mensagem_clarificacao_necessaria'.
+      - intencao: ("marcar_reuniao", "listar_reunioes", "cancelar_reuniao", "alterar_reuniao", "pedido_incompleto", "desconhecida").
       - id_reuniao: ID NUMÉRICO da reunião se explicitamente mencionado pelo utilizador (inteiro ou null).
       
       // Para marcar uma NOVA reunião:
       - tipo_compromisso_novo: Tipo de compromisso (ex: "almoço", "reunião", "café", "dentista"). Se não especificado, use "compromisso". (string ou null).
       - pessoa_nova_reuniao: Nome da pessoa para a nova reunião (string ou null).
-      - data_nova_reuniao: Data para a nova reunião (string ou null, ex: "hoje", "amanhã", "15/05/2025", "próxima segunda-feira", "segunda"). Tente interpretar datas relativas e textuais, incluindo dias da semana. Se for "próxima [dia da semana]", extraia "[dia da semana]" e também indique que é "próxima".
-      - horario_novo_reuniao: Horário para a nova reunião (string ou null, ex: "15 horas", "10h30", "meio-dia", "9 da manhã", "umas 17:30"). Tente interpretar horários textuais, removendo palavras como "umas" ou "por volta das".
+      - data_nova_reuniao: Data para a nova reunião (string ou null, ex: "hoje", "amanhã", "15/05/2025", "próxima segunda-feira", "segunda").
+      - horario_novo_reuniao: Horário para a nova reunião (string ou null, ex: "15 horas", "10h30", "meio-dia", "umas 17:30"). Remova palavras como "umas".
 
       // Para identificar uma reunião ALVO (para cancelar ou alterar SEM ID):
       - tipo_compromisso_alvo: Tipo do compromisso alvo (string ou null).
@@ -195,24 +195,22 @@ export default async function handler(req, res) {
       - horario_alvo: Horário da reunião alvo (string ou null).
 
       // Para os NOVOS dados de uma alteração (se a intenção for 'alterar_reuniao'):
-      // Preencha estes campos com os NOVOS detalhes que o utilizador mencionou para a alteração.
       - pessoa_alteracao: NOVO nome da pessoa para a reunião (string ou null, se mencionado).
-      - data_alteracao: NOVA data para a reunião (string ou null). Se o utilizador disser "mesma data", "manter data", "na mesma data", "manter a data" ou similar, preencha este campo com a string literal "manter".
-      - horario_alteracao: NOVO horário para a reunião (string ou null). Se o utilizador disser "mesmo horário", "manter horário", "no mesmo horário", "na mesma data e horário", "manter o horário" ou similar, preencha este campo com a string literal "manter".
+      - data_alteracao: NOVA data para a reunião (string ou null). Se o utilizador disser "mesma data", "manter data", "na mesma data", "manter a data" ou similar, preencha este campo com a string literal "manter". Se não for mencionada nova data, deixe null.
+      - horario_alteracao: NOVO horário para a reunião (string ou null). Se o utilizador disser "mesmo horário", "manter horário", "no mesmo horário", "na mesma data e horário", "manter o horário" ou similar, preencha este campo com a string literal "manter". Se não for mencionado novo horário, deixe null.
       
-      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial para prosseguir:
-          - Para 'marcar_reuniao': se faltar pessoa_nova_reuniao, data_nova_reuniao ou horario_novo_reuniao.
-          - Para 'cancelar_reuniao' sem id_reuniao: se faltar pessoa_alvo, data_alvo ou horario_alvo.
-          - Para 'alterar_reuniao': 
-              - Se faltar id_reuniao E (pessoa_alvo ou data_alvo ou horario_alvo).
-              - E se faltar PELO MENOS UM dos novos dados (pessoa_alteracao, tipo_compromisso_alteracao) OU (data_alteracao diferente de "manter" e horario_alteracao diferente de "manter" mas um deles está em falta).
-          Descreva EXATAMENTE o que falta para essa intenção. (string ou null). 
-          Se todas as informações para a intenção principal estiverem presentes, ou se para uma alteração os campos de data/hora foram explicitamente marcados como "manter" E pelo menos um outro campo de alteração (pessoa_alteracao ou tipo_compromisso_alteracao) foi fornecido, este campo 'mensagem_clarificacao_necessaria' deve ser null.
+      - mensagem_clarificacao_necessaria: (string ou null). Preencha este campo APENAS SE:
+          - Para 'marcar_reuniao': faltar pessoa_nova_reuniao OU data_nova_reuniao OU horario_novo_reuniao.
+          - Para 'cancelar_reuniao' sem id_reuniao: faltar pessoa_alvo OU data_alvo OU horario_alvo.
+          - Para 'alterar_reuniao':
+              - Se faltar id_reuniao E (faltar pessoa_alvo OU data_alvo OU horario_alvo para identificar a reunião original).
+              - OU se, após identificar a reunião alvo, faltar PELO MENOS UM dos novos dados (pessoa_alteracao, tipo_compromisso_alteracao) E NEM data_alteracao NEM horario_alteracao forem "manter" ou preenchidos com novos valores. (Ex: "alterar reuniao com X para Y", sem dizer o que é Y).
+          Descreva EXATAMENTE o que falta. Caso contrário, deixe null.
       
       Priorize 'id_reuniao' se um número for claramente um ID.
-      Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'. Se o utilizador disser "amanhã ao meio-dia", 'data_nova_reuniao' deve ser "amanhã" e 'horario_novo_reuniao' deve ser "meio-dia". Se disser "segunda-feira às 16h", 'data_nova_reuniao' deve ser "segunda-feira" e 'horario_novo_reuniao' deve ser "16h". Se disser "próxima sexta-feira umas 17:30", 'data_nova_reuniao' deve ser "próxima sexta-feira" e 'horario_novo_reuniao' deve ser "17:30".
+      Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'.
       Se a intenção for 'cancelar_reuniao' e 'id_reuniao' for null, foque em 'pessoa_alvo', 'data_alvo', e 'horario_alvo'.
-      Se a intenção for 'alterar_reuniao', foque em identificar a reunião alvo (via 'id_reuniao' ou 'pessoa_alvo', 'data_alvo', 'horario_alvo') E os novos dados ('pessoa_alteracao', 'data_alteracao', 'horario_alteracao'). Se para 'data_alteracao' ou 'horario_alteracao' o utilizador indicar para manter o original (ex: "mesma data", "mesmo horário", "na mesma data e horário"), preencha o campo correspondente com a string "manter".
+      Se a intenção for 'alterar_reuniao', foque em identificar a reunião alvo (via 'id_reuniao' ou 'pessoa_alvo', 'data_alvo', 'horario_alvo') E os novos dados ('pessoa_alteracao', 'data_alteracao', 'horario_alteracao'). Se para 'data_alteracao' ou 'horario_alteracao' o utilizador indicar para manter o original, preencha o campo correspondente com "manter". Se apenas um novo detalhe for fornecido (ex: só nova pessoa), os outros campos de alteração (data_alteracao, horario_alteracao) devem ser "manter" se o utilizador disse "mesma data/horário", ou null caso contrário.
       Responda APENAS com o objeto JSON.
     `;
     console.log("Backend: Enviando para OpenAI para extração...");
@@ -438,8 +436,13 @@ export default async function handler(req, res) {
                 if (novaDataHoraUTC) dadosUpdate.data_hora = novaDataHoraUTC.toISOString(); else { mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui interpretar a nova data "${novosDados.data_relativa}" para a alteração.`); break; }
             } else if ((novosDados.data_relativa && novosDados.data_relativa !== "manter" && (!novosDados.horario_texto || novosDados.horario_texto === "manter")) || 
                        (novosDados.horario_texto && novosDados.horario_texto !== "manter" && (!novosDados.data_relativa || novosDados.data_relativa === "manter"))) { 
-                 mensagemParaFrontend = await gerarRespostaConversacional(`Para alterar a data/hora do compromisso ID ${idParaAlterarOriginal}, preciso da nova data E do novo horário, ou que indique para manter um deles. Você forneceu: Data="${novosDados.data_relativa}", Hora="${novosDados.horario_texto}". Peça a informação em falta.`);
-                 break;
+                 // Se forneceu SÓ nova data ou SÓ nova hora (e não é "manter"), mas não ambos
+                 // OU se um é "manter" e o outro é null/vazio (não "manter")
+                 if ( (novosDados.data_relativa && novosDados.data_relativa !== "manter" && !novosDados.horario_texto) || 
+                      (novosDados.horario_texto && novosDados.horario_texto !== "manter" && !novosDados.data_relativa) ) {
+                    mensagemParaFrontend = await gerarRespostaConversacional(`Para alterar a data/hora do compromisso ID ${idParaAlterarOriginal}, preciso da nova data E do novo horário. Você forneceu: Data="${novosDados.data_relativa}", Hora="${novosDados.horario_texto}". Peça a informação em falta.`);
+                    break;
+                 }
             }
             
             if (novosDados.pessoa) {
