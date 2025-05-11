@@ -68,21 +68,28 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   else if (dataNorm === "amanhã" || dataNorm === "amanha") {
     dataBase = agoraEmSaoPaulo.add(1, 'day');
   } else if (diasDaSemana[dataNorm] !== undefined) {
-    const diaDesejado = diasDaSemana[dataNorm]; // 0 (Dom) a 6 (Sab) para dayjs default
+    const diaDesejado = diasDaSemana[dataNorm];
     let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); 
 
-    // Se o utilizador disse "próxima [dia da semana]"
     if (ehProximaSemana) {
-        // Se o dia calculado por .day() for hoje ou um dia futuro na semana atual,
-        // então "próxima" significa a semana seguinte a essa.
-        if (dataCalculada.isSame(agoraEmSaoPaulo, 'day') || dataCalculada.isAfter(agoraEmSaoPaulo, 'day')) {
-            dataCalculada = dataCalculada.add(1, 'week');
+        // Se o dia calculado já está na próxima semana (porque .day() pode avançar),
+        // ou se é um dia futuro na semana atual, adicionamos 7 dias para garantir que é a "próxima" ocorrência.
+        if (dataCalculada.isAfter(agoraEmSaoPaulo.endOf('week')) || dataCalculada.isAfter(agoraEmSaoPaulo, 'day')) {
+            // Se já está na próxima semana ou é um dia futuro, e "próxima" foi dito, avançar mais uma semana.
+            // No entanto, se .day() já deu o dia correto na próxima semana, não adicionar.
+            // Ex: hoje é Sab, pede "próxima sexta". .day(5) dá a sexta da semana que vem. Correto.
+            // Ex: hoje é Seg, pede "próxima sexta". .day(5) dá a sexta desta semana. Adicionar 7 dias.
+            if (dataCalculada.week() === agoraEmSaoPaulo.week() && dataCalculada.isAfter(agoraEmSaoPaulo,'day')) {
+                 dataCalculada = dataCalculada.add(1, 'week');
+            } else if (dataCalculada.isSame(agoraEmSaoPaulo,'day')) { // Se hoje é o dia da semana pedido e quer "próxima"
+                 dataCalculada = dataCalculada.add(1, 'week');
+            }
+            // Se dataCalculada.isBefore(agoraEmSaoPaulo), dayjs().day() já a colocou na próxima semana.
+            // Se dataCalculada.week() > agoraEmSaoPaulo.week(), já está na próxima semana.
+        } else { // Se o dia calculado é hoje ou já passou nesta semana
+             dataCalculada = dataCalculada.add(1, 'week');
         }
-        // Se .day() já retornou um dia na próxima semana (porque o dia na semana atual já passou),
-        // e "próxima" foi dito, então já está correto (não precisa adicionar outra semana).
     } else { // Não disse "próxima"
-        // Se o dia calculado for anterior a hoje (dayjs.day() pode retornar dia da semana anterior),
-        // avançamos para a próxima ocorrência desse dia.
         if (dataCalculada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
             dataCalculada = dataCalculada.add(1, 'week');
         }
@@ -94,8 +101,8 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     let dataParseada = null;
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', // Com ano explícito
-        'D MMMM', 'D [de] MMMM' // Sem ano explícito
+        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', 
+        'D MMMM', 'D [de] MMMM' 
     ];
 
     for (const formato of formatosData) {
@@ -110,8 +117,6 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             }
         }
         console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
-        // Para datas explícitas, usamos a data parseada diretamente, não 'agoraEmSaoPaulo' como base para dia/mês/ano
-        // mas precisamos garantir que está no fuso horário correto antes de aplicar horas
         dataBase = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA); 
         break; 
       }
