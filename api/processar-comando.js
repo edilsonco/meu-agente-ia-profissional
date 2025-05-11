@@ -68,29 +68,20 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   else if (dataNorm === "amanhã" || dataNorm === "amanha") {
     dataBase = agoraEmSaoPaulo.add(1, 'day');
   } else if (diasDaSemana[dataNorm] !== undefined) {
-    const diaDesejado = diasDaSemana[dataNorm];
-    let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); // Encontra o dia X na semana atual (Sun-Sat)
+    const diaDesejado = diasDaSemana[dataNorm]; // 0 (Dom) a 6 (Sab) para dayjs default
+    let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); 
 
-    if (ehProximaSemana) {
-        // Se "próxima" foi dito, queremos o dia X da semana seguinte.
-        // Se dataCalculada já é um dia futuro na semana atual, adicionar 7 dias.
-        // Se dataCalculada é hoje ou um dia passado na semana atual, .add(1, 'week') já o levará para a próxima semana.
-        if (dataCalculada.isAfter(agoraEmSaoPaulo.subtract(1,'day'))) { // Se não é um dia que já passou nesta semana
-             dataCalculada = dataCalculada.add(1, 'week');
-        } else { // Se era um dia que já passou nesta semana, .day() já o colocou na próxima.
-            // No entanto, se disse "próxima" e .day() já o colocou na próxima, queremos a *seguinte* a essa.
-            // Ex: Hoje é Sábado. "próxima sexta". .day(5) dá ontem. Se já está na "próxima semana" (ontem),
-            // e queremos a "próxima", então é mais 7 dias.
-            // Esta lógica é complexa. Mais simples:
-            dataCalculada = agoraEmSaoPaulo.add(1, 'week').day(diaDesejado);
-        }
-    } else { // Não disse "próxima"
-        // Se o dia calculado for anterior a hoje, significa que é o dia X da semana seguinte.
-        if (dataCalculada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
-            dataCalculada = dataCalculada.add(1, 'week');
-        }
-        // Se for hoje ou um dia futuro na semana atual, está correto.
+    // Se o dia calculado é anterior a hoje (na mesma semana), ou se é hoje mas "próxima" foi dito,
+    // então queremos o dia da próxima semana.
+    if (dataCalculada.isBefore(agoraEmSaoPaulo.startOf('day')) || (dataCalculada.isSame(agoraEmSaoPaulo.startOf('day')) && ehProximaSemana) ) {
+        dataCalculada = dataCalculada.add(1, 'week');
+    } else if (ehProximaSemana && dataCalculada.isAfter(agoraEmSaoPaulo.startOf('day'))) {
+        // Se o dia calculado é um dia futuro na semana atual, mas "próxima" foi dito,
+        // então queremos esse dia na semana seguinte.
+        dataCalculada = dataCalculada.add(1, 'week');
     }
+    // Se não disse "próxima" e o dia calculado é hoje ou um dia futuro na semana atual, está correto.
+
     dataBase = dataCalculada;
     console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' interpretado como:`, dataBase.format('YYYY-MM-DD'));
   }
@@ -386,6 +377,7 @@ export default async function handler(req, res) {
                 break;
             }
             
+            // Verifica se PELO MENOS UM novo dado foi fornecido para alteração
             if (!novosDados.pessoa && 
                 (novosDados.data_relativa !== "manter" && !novosDados.data_relativa) && 
                 (novosDados.horario_texto !== "manter" && !novosDados.horario_texto) && 
@@ -425,6 +417,7 @@ export default async function handler(req, res) {
             let novaDataHoraUTC = null;
             const dadosUpdate = {};
 
+            // Lógica para novos dados de data/hora
             if (novosDados.data_relativa && novosDados.data_relativa !== "manter" && novosDados.horario_texto && novosDados.horario_texto !== "manter") {
                 novaDataHoraUTC = interpretarDataHoraComDayjs(novosDados.data_relativa, novosDados.horario_texto);
                 if (!novaDataHoraUTC) {
@@ -438,12 +431,14 @@ export default async function handler(req, res) {
                 }
                 dadosUpdate.data_hora = novaDataHoraUTC.toISOString();
             } else if (novosDados.data_relativa === "manter" && novosDados.horario_texto && novosDados.horario_texto !== "manter") {
+                // Manter data, alterar hora
                 const { data: reuniaoParaPegarData, error: erroBuscaDataOriginal } = await supabase.from('reunioes').select('data_hora').eq('id', idParaAlterarOriginal).single();
                 if (erroBuscaDataOriginal || !reuniaoParaPegarData) { mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião ID ${idParaAlterarOriginal} para buscar a data original.`); break; }
                 const dataOriginalParaManter = dayjs(reuniaoParaPegarData.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY'); 
                 novaDataHoraUTC = interpretarDataHoraComDayjs(dataOriginalParaManter, novosDados.horario_texto); 
                 if (novaDataHoraUTC) dadosUpdate.data_hora = novaDataHoraUTC.toISOString(); else { mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui interpretar o novo horário "${novosDados.horario_texto}" para a alteração.`); break; }
             } else if (novosDados.horario_texto === "manter" && novosDados.data_relativa && novosDados.data_relativa !== "manter") {
+                // Manter hora, alterar data
                 const { data: reuniaoParaPegarHora, error: erroBuscaHoraOriginal } = await supabase.from('reunioes').select('data_hora').eq('id', idParaAlterarOriginal).single();
                 if (erroBuscaHoraOriginal || !reuniaoParaPegarHora) { mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião ID ${idParaAlterarOriginal} para buscar o horário original.`); break; }
                 const horarioOriginalParaManter = dayjs(reuniaoParaPegarHora.data_hora).tz(TIMEZONE_REFERENCIA).format('HH:mm'); 
