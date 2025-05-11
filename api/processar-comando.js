@@ -197,10 +197,17 @@ export default async function handler(req, res) {
       // Para os NOVOS dados de uma alteração (se a intenção for 'alterar_reuniao'):
       // Preencha estes campos com os NOVOS detalhes que o utilizador mencionou para a alteração.
       - pessoa_alteracao: NOVO nome da pessoa para a reunião (string ou null, se mencionado).
-      - data_alteracao: NOVA data para a reunião (string ou null). Se o utilizador disser "mesma data", "manter data", "na mesma data" ou similar, preencha este campo com a string literal "manter".
-      - horario_alteracao: NOVO horário para a reunião (string ou null). Se o utilizador disser "mesmo horário", "manter horário", "no mesmo horário", "na mesma data e horário" ou similar, preencha este campo com a string literal "manter".
+      - data_alteracao: NOVA data para a reunião (string ou null). Se o utilizador disser "mesma data", "manter data", "na mesma data", "manter a data" ou similar, preencha este campo com a string literal "manter".
+      - horario_alteracao: NOVO horário para a reunião (string ou null). Se o utilizador disser "mesmo horário", "manter horário", "no mesmo horário", "na mesma data e horário", "manter o horário" ou similar, preencha este campo com a string literal "manter".
       
-      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial para prosseguir (ex: para marcar, falta data ou hora; para cancelar por descrição, falta pessoa_alvo, data_alvo ou horario_alvo; para alterar e não foi dito "manter" para data/hora, faltam os novos dados de data/hora), descreva EXATAMENTE o que falta para essa intenção. (string ou null). Se todas as informações para a intenção principal estiverem presentes, ou se para uma alteração os campos de data/hora foram explicitamente marcados como "manter" (e pelo menos um outro campo como pessoa_alteracao ou tipo_compromisso_alteracao foi fornecido), este campo deve ser null.
+      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial para prosseguir:
+          - Para 'marcar_reuniao': se faltar pessoa_nova_reuniao, data_nova_reuniao ou horario_novo_reuniao.
+          - Para 'cancelar_reuniao' sem id_reuniao: se faltar pessoa_alvo, data_alvo ou horario_alvo.
+          - Para 'alterar_reuniao': 
+              - Se faltar id_reuniao E (pessoa_alvo ou data_alvo ou horario_alvo).
+              - E se faltar PELO MENOS UM dos novos dados (pessoa_alteracao, tipo_compromisso_alteracao) OU (data_alteracao diferente de "manter" e horario_alteracao diferente de "manter" mas um deles está em falta).
+          Descreva EXATAMENTE o que falta para essa intenção. (string ou null). 
+          Se todas as informações para a intenção principal estiverem presentes, ou se para uma alteração os campos de data/hora foram explicitamente marcados como "manter" E pelo menos um outro campo de alteração (pessoa_alteracao ou tipo_compromisso_alteracao) foi fornecido, este campo 'mensagem_clarificacao_necessaria' deve ser null.
       
       Priorize 'id_reuniao' se um número for claramente um ID.
       Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'. Se o utilizador disser "amanhã ao meio-dia", 'data_nova_reuniao' deve ser "amanhã" e 'horario_novo_reuniao' deve ser "meio-dia". Se disser "segunda-feira às 16h", 'data_nova_reuniao' deve ser "segunda-feira" e 'horario_novo_reuniao' deve ser "16h". Se disser "próxima sexta-feira umas 17:30", 'data_nova_reuniao' deve ser "próxima sexta-feira" e 'horario_novo_reuniao' deve ser "17:30".
