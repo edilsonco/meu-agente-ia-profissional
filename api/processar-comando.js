@@ -77,10 +77,8 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     let dataParseada = null;
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM<y_bin_46> /* Ano opcional/explícito */', 
-        'D [de] MMMM [de] YYYY', // Com ano explícito
-        'D MMMM', 
-        'D [de] MMMM' // Sem ano explícito
+        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', // Com ano explícito
+        'D MMMM', 'D [de] MMMM' // Sem ano explícito
     ];
 
     for (const formato of formatosData) {
@@ -202,7 +200,7 @@ export default async function handler(req, res) {
       - data_alteracao: NOVA data para a reunião (string ou null). Se o utilizador disser "mesma data", "manter data", "na mesma data" ou similar, preencha este campo com a string literal "manter".
       - horario_alteracao: NOVO horário para a reunião (string ou null). Se o utilizador disser "mesmo horário", "manter horário", "no mesmo horário", "na mesma data e horário" ou similar, preencha este campo com a string literal "manter".
       
-      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial para prosseguir (ex: para marcar, falta data ou hora; para cancelar por descrição, falta pessoa_alvo, data_alvo ou horario_alvo; para alterar e não foi dito "manter" para data/hora, faltam os novos dados de data/hora), descreva EXATAMENTE o que falta para essa intenção. (string ou null). Se todas as informações para a intenção principal estiverem presentes, ou se para uma alteração os campos de data/hora foram explicitamente marcados como "manter", este campo deve ser null.
+      - mensagem_clarificacao_necessaria: Se a intenção for clara mas faltar informação essencial para prosseguir (ex: para marcar, falta data ou hora; para cancelar por descrição, falta pessoa_alvo, data_alvo ou horario_alvo; para alterar e não foi dito "manter" para data/hora, faltam os novos dados de data/hora), descreva EXATAMENTE o que falta para essa intenção. (string ou null). Se todas as informações para a intenção principal estiverem presentes, ou se para uma alteração os campos de data/hora foram explicitamente marcados como "manter" (e pelo menos um outro campo como pessoa_alteracao ou tipo_compromisso_alteracao foi fornecido), este campo deve ser null.
       
       Priorize 'id_reuniao' se um número for claramente um ID.
       Se a intenção for 'marcar_reuniao', foque em 'pessoa_nova_reuniao', 'data_nova_reuniao', e 'horario_novo_reuniao'. Se o utilizador disser "amanhã ao meio-dia", 'data_nova_reuniao' deve ser "amanhã" e 'horario_novo_reuniao' deve ser "meio-dia". Se disser "segunda-feira às 16h", 'data_nova_reuniao' deve ser "segunda-feira" e 'horario_novo_reuniao' deve ser "16h". Se disser "próxima sexta-feira umas 17:30", 'data_nova_reuniao' deve ser "próxima sexta-feira" e 'horario_novo_reuniao' deve ser "17:30".
