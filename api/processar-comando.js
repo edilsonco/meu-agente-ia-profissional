@@ -68,24 +68,22 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   else if (dataNorm === "amanhã" || dataNorm === "amanha") {
     dataBase = agoraEmSaoPaulo.add(1, 'day');
   } else if (diasDaSemana[dataNorm] !== undefined) {
-    const diaDesejado = diasDaSemana[dataNorm]; // 0 (Dom) a 6 (Sab) para dayjs default
+    const diaDesejado = diasDaSemana[dataNorm];
     let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); 
 
-    // Se o dia calculado é anterior a hoje (na mesma semana), ou se é hoje mas "próxima" foi dito,
-    // então queremos o dia da próxima semana.
-    if (dataCalculada.isBefore(agoraEmSaoPaulo.startOf('day')) || (dataCalculada.isSame(agoraEmSaoPaulo.startOf('day')) && ehProximaSemana) ) {
-        dataCalculada = dataCalculada.add(1, 'week');
-    } else if (ehProximaSemana && dataCalculada.isAfter(agoraEmSaoPaulo.startOf('day'))) {
-        // Se o dia calculado é um dia futuro na semana atual, mas "próxima" foi dito,
-        // então queremos esse dia na semana seguinte.
-        dataCalculada = dataCalculada.add(1, 'week');
+    if (ehProximaSemana) {
+        if (dataCalculada.isSame(agoraEmSaoPaulo, 'day') || dataCalculada.isAfter(agoraEmSaoPaulo, 'day')) {
+            dataCalculada = dataCalculada.add(1, 'week');
+        }
+    } else {
+        if (dataCalculada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
+            dataCalculada = dataCalculada.add(1, 'week'); 
+        }
     }
-    // Se não disse "próxima" e o dia calculado é hoje ou um dia futuro na semana atual, está correto.
-
     dataBase = dataCalculada;
     console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' interpretado como:`, dataBase.format('YYYY-MM-DD'));
   }
-  else { // Datas explícitas
+  else { 
     let dataParseada = null;
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
@@ -135,7 +133,6 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     }
   }
 
-  // dataBase já está no fuso de São Paulo e com a data correta
   const dataHoraFinalEmSaoPaulo = dataBase.hour(horas).minute(minutos).second(0).millisecond(0);
   if (!dataHoraFinalEmSaoPaulo.isValid()) {
       console.error("interpretarDataHora: Data/Hora final inválida em SP", dataHoraFinalEmSaoPaulo);
