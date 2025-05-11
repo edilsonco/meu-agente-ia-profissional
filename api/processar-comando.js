@@ -69,36 +69,22 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     dataBase = dataBase.add(1, 'day');
   } else if (diasDaSemana[dataNorm] !== undefined) {
     const diaDesejado = diasDaSemana[dataNorm];
-    let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); // Encontra o próximo dia da semana X (pode ser na semana atual ou na próxima)
+    let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); 
 
-    // Se o utilizador disse "próxima" OU 
-    // se não disse "próxima" mas o dia calculado é hoje ou já passou nesta semana,
-    // então avançamos para a ocorrência dessa dia na semana seguinte.
     if (ehProximaSemana) {
-        // Se .day() já nos deu um dia na próxima semana (porque o dia na semana atual já passou),
-        // e o utilizador disse "próxima", significa que quer a semana DEPOIS dessa.
-        // Se .day() deu um dia na semana atual (que ainda não passou), "próxima" significa a próxima semana.
-        if (dataCalculada.isAfter(agoraEmSaoPaulo, 'day') && !dataCalculada.isSame(agoraEmSaoPaulo.add(7,'day').startOf('week'),'week')) {
-             // Se dataCalculada é um dia futuro na semana corrente, e disse "próxima", adiciona 1 semana.
+        // Se o dia calculado já está na próxima semana em relação a 'agora', não precisa adicionar mais uma semana.
+        // Mas se o dia calculado é hoje ou um dia futuro na semana atual, precisa adicionar uma semana.
+        if (dataCalculada.isSame(agoraEmSaoPaulo, 'day') || dataCalculada.isAfter(agoraEmSaoPaulo, 'day')) {
             dataCalculada = dataCalculada.add(1, 'week');
-        } else if (dataCalculada.isSame(agoraEmSaoPaulo, 'day') || dataCalculada.isBefore(agoraEmSaoPaulo, 'day')) {
-            // Se dataCalculada é hoje ou um dia passado na semana corrente (dayjs pode ter voltado),
-            // e disse "próxima", então é a próxima ocorrência + 1 semana.
-            // .day() já nos dá a próxima ocorrência se o dia já passou.
-            // Então, se disse "próxima", só precisamos adicionar uma semana à "próxima ocorrência" que dayjs calculou.
-            dataCalculada = agoraEmSaoPaulo.day(diaDesejado).add(1, 'week');
         }
-        // Caso especial: se hoje é segunda e pede "próxima segunda", dayjs().day(1) dá hoje. Adicionar 1 semana.
-        if (agoraEmSaoPaulo.day() === diaDesejado && ehProximaSemana) {
-            dataCalculada = agoraEmSaoPaulo.add(1, 'week').day(diaDesejado);
-        }
-
-
+        // Se .day() retornou um dia que já passou na semana atual (e portanto já está na "próxima" semana),
+        // e "próxima" foi dito, então está correto.
     } else { // Não disse "próxima"
         // Se o dia calculado por .day() for anterior a hoje (ex: hoje é Sábado, pediu "sexta"),
         // dayjs já o coloca na próxima semana.
-        // Se o dia calculado for hoje, mantém-se.
-        // Não precisamos de lógica extra aqui, dayjs().day() lida bem com isto.
+        if (dataCalculada.isBefore(agoraEmSaoPaulo, 'day')) {
+             dataCalculada = dataCalculada.add(1, 'week');
+        }
     }
     dataBase = dataCalculada;
     console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' interpretado como:`, dataBase.format());
@@ -165,7 +151,29 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   return dataHoraFinalEmSaoPaulo.utc();
 }
 
-// ... (Restante do código - gerarRespostaConversacional e handler - permanece o mesmo da v21) ...
+async function gerarRespostaConversacional(contextoParaIA) {
+  if (!openai) return "Desculpe, estou com problemas para gerar uma resposta neste momento (IA não configurada).";
+  
+  console.log("Backend: Gerando resposta conversacional com contexto:", contextoParaIA);
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: `Você é um assistente de agendamento virtual chamado "Agente IA", extremamente simpático, prestável e profissional. Responda sempre em português do Brasil. Seja claro e confirme as ações realizadas. Se houver um erro ou algo não for possível, explique de forma educada. Se precisar de mais informações para completar uma ação, peça-as de forma natural e específica (ex: "Para que dia e hora seria?", "Com quem seria o compromisso?"). Não imponha formatos de data/hora ao pedir informações, apenas peça os detalhes em falta. Nunca mencione IDs numéricos de reuniões diretamente para o utilizador nas suas respostas de confirmação ou listagem, a menos que seja explicitamente pedido para depuração ou se precisar de desambiguar entre múltiplas reuniões idênticas (neste caso, pode apresentar os detalhes completos, incluindo tipo, data e hora, para o utilizador escolher).`
+        },
+        { role: "user", content: contextoParaIA }
+      ],
+      temperature: 0.7, 
+    });
+    return completion.choices[0].message.content.trim();
+  } catch (error) {
+    console.error("Backend: Erro ao gerar resposta conversacional com OpenAI:", error);
+    return "Peço desculpa, ocorreu um erro ao tentar processar a sua resposta.";
+  }
+}
+
 // --- Função Principal da Serverless Function ---
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -429,12 +437,14 @@ export default async function handler(req, res) {
                 }
                 dadosUpdate.data_hora = novaDataHoraUTC.toISOString();
             } else if (novosDados.data_relativa === "manter" && novosDados.horario_texto && novosDados.horario_texto !== "manter") {
+                // Manter data, alterar hora
                 const { data: reuniaoParaPegarData, error: erroBuscaDataOriginal } = await supabase.from('reunioes').select('data_hora').eq('id', idParaAlterarOriginal).single();
                 if (erroBuscaDataOriginal || !reuniaoParaPegarData) { mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião ID ${idParaAlterarOriginal} para buscar a data original.`); break; }
                 const dataOriginalParaManter = dayjs(reuniaoParaPegarData.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY'); 
                 novaDataHoraUTC = interpretarDataHoraComDayjs(dataOriginalParaManter, novosDados.horario_texto); 
                 if (novaDataHoraUTC) dadosUpdate.data_hora = novaDataHoraUTC.toISOString(); else { mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui interpretar o novo horário "${novosDados.horario_texto}" para a alteração.`); break; }
             } else if (novosDados.horario_texto === "manter" && novosDados.data_relativa && novosDados.data_relativa !== "manter") {
+                // Manter hora, alterar data
                 const { data: reuniaoParaPegarHora, error: erroBuscaHoraOriginal } = await supabase.from('reunioes').select('data_hora').eq('id', idParaAlterarOriginal).single();
                 if (erroBuscaHoraOriginal || !reuniaoParaPegarHora) { mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei a reunião ID ${idParaAlterarOriginal} para buscar o horário original.`); break; }
                 const horarioOriginalParaManter = dayjs(reuniaoParaPegarHora.data_hora).tz(TIMEZONE_REFERENCIA).format('HH:mm'); 
