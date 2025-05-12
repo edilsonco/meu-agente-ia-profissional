@@ -93,16 +93,16 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     let dataParseada = null;
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM<y_bin_46> /* Ano opcional/explícito */', 
-        'D [de] MMMM [de]YYYY', // Com ano explícito
-        'D MMMM', 
-        'D [de] MMMM' // Sem ano explícito
+        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', // Com ano explícito
+        'D MMMM', 'D [de] MMMM' // Sem ano explícito
     ];
 
     for (const formato of formatosData) {
       dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
       if (dataParseada.isValid()) {
+        // Se o formato não especifica o ano (ex: 'D MMMM') e o ano não está na string original
         if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
+            // Se a data parseada (considerando apenas dia/mês) for anterior a hoje, assume próximo ano
             let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
             if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
                 dataParseada = dataComAnoCorrente.add(1, 'year');
@@ -164,7 +164,7 @@ async function gerarRespostaConversacional(contextoParaIA) {
       messages: [
         {
           role: "system",
-          content: `Você é um assistente de agendamento virtual chamado "Agente IA", extremamente simpático, prestável e profissional. Responda sempre em português do Brasil. Seja claro e confirme as ações realizadas. Se houver um erro ou algo não for possível, explique de forma educada. Se precisar de mais informações para completar uma ação, peça-as de forma natural e específica (ex: "Para que dia e hora seria?", "Com quem seria o compromisso?"). Não imponha formatos de data/hora ao pedir informações, apenas peça os detalhes em falta. Nunca mencione IDs numéricos de reuniões diretamente para o utilizador nas suas respostas de confirmação ou listagem, a menos que seja explicitamente pedido para depuração ou se precisar de desambiguar entre múltiplas reuniões idêntICAS (neste caso, pode apresentar os detalhes completos, incluindo tipo, data e hora, para o utilizador escolher).`
+          content: `Você é um assistente de agendamento virtual chamado "Agente IA", extremamente simpático, prestável e profissional. Responda sempre em português do Brasil. Seja claro e confirme as ações realizadas. Se houver um erro ou algo não for possível, explique de forma educada. Se precisar de mais informações para completar uma ação, peça-as de forma natural e específica (ex: "Para que dia e hora seria?", "Com quem seria o compromisso?"). Não imponha formatos de data/hora ao pedir informações, apenas peça os detalhes em falta. Nunca mencione IDs numéricos de reuniões diretamente para o utilizador nas suas respostas de confirmação ou listagem, a menos que seja explicitamente pedido para depuração ou se precisar de desambiguar entre múltiplas reuniões idênticas (neste caso, pode apresentar os detalhes completos, incluindo tipo, data e hora, para o utilizador escolher).`
         },
         { role: "user", content: contextoParaIA }
       ],
