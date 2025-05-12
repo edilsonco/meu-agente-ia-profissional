@@ -79,12 +79,11 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
         if (diff === 0) { // Mesmo dia da semana
             diff = ehProximaSemana ? 7 : 0; 
         } else if (ehProximaSemana) { 
-            // Se o dia alvo é depois de hoje na mesma semana, e pediu "próxima", adiciona 7
-            // Ex: Hoje Seg(1), pede próxima Qua(3). diff=2. diff+7=9.
-            // Se o dia alvo é antes ou hoje, o diff já calcula para a próxima semana.
+             // Se já é um dia futuro na semana atual, e pediu "próxima", adiciona 7
             if (diaAlvoNum > hojeNum) { 
                  diff += 7;
             }
+            // Se diaAlvoNum <= hojeNum, o diff já calcula para a próxima semana.
         }
         // Se não é "próxima" e diff > 0, já está a apontar para o dia correto na semana atual ou na próxima.
         
@@ -96,7 +95,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
             julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12
         };
-        // Tenta primeiro o formato "D de MMMM [de YYYY]"
+        // Tenta primeiro o formato "D de MMMM [de<y_bin_46>]"
         const matchMesExtenso = dataNorm.match(/(\d{1,2})\s+(?:de\s+)?([a-zA-Zçã]+)(?:\s+(?:de\s+)?(\d{4}|\d{2}))?/i);
 
         if (matchMesExtenso) {
@@ -440,7 +439,7 @@ export default async function handler(req, res) {
                     let listaAmbiguaAlterar = reunioesParaAlterar.map(r => `${r.tipo_compromisso || 'Compromisso'} com ${pessoaAlvoOriginal} em ${dayjs(dataHoraAlvoParaAlterarUTC).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`).join("\n"); 
                     mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei vários compromissos para ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal}. São eles:\n${listaAmbiguaAlterar}\nPreciso que especifique qual deles quer alterar (ex: "o primeiro", "o almoço das 10h").`);
                     break;
-                } else {
+                } else { // Nenhuma encontrada
                     mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei o compromisso com ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal} para alterar. Gostaria de verificar os detalhes ou listar seus compromissos?`);
                     break;
                 }
