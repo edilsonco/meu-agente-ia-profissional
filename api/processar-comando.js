@@ -44,7 +44,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     return null;
   }
   const agoraEmSaoPaulo = dayjs().tz(TIMEZONE_REFERENCIA);
-  let dataBase = agoraEmSaoPaulo; 
+  let dataBase = agoraEmSaoPaulo.startOf('day'); // Começa com a data base à meia-noite para consistência
   let dataNorm = dataRelativa.toLowerCase();
   
   let ehProximaSemana = false;
@@ -52,71 +52,84 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
       dataNorm = dataNorm.substring("próxima ".length);
       ehProximaSemana = true;
   }
-  dataNorm = dataNorm.replace("-feira", ""); 
+  dataNorm = dataNorm.replace("-feira", "").trim(); 
   
   let horarioProcessado = horarioTexto.toLowerCase();
-  horarioProcessado = horarioProcessado.replace(/^(umas\s+|por volta d[ao]s\s+)/, '');
+  horarioProcessado = horarioProcessado.replace(/^(umas\s+|por volta d[ao]s\s+)/, '').trim();
 
-
-  const diasDaSemana = {
+  const diasDaSemanaMap = {
     domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6
   };
 
   if (dataNorm === "hoje") { 
-    dataBase = agoraEmSaoPaulo; 
+    dataBase = agoraEmSaoPaulo.startOf('day'); 
   } 
   else if (dataNorm === "amanhã" || dataNorm === "amanha") {
-    dataBase = agoraEmSaoPaulo.add(1, 'day');
-  } else if (diasDaSemana[dataNorm] !== undefined) {
-    const diaDesejado = diasDaSemana[dataNorm];
-    let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); 
+    dataBase = agoraEmSaoPaulo.add(1, 'day').startOf('day');
+  } else if (diasDaSemanaMap[dataNorm] !== undefined) {
+    const diaAlvoNum = diasDaSemanaMap[dataNorm];
+    const hojeNum = agoraEmSaoPaulo.day(); // 0 para Domingo, 6 para Sábado
 
-    if (ehProximaSemana) {
-        // Se o dia calculado é hoje ou um dia futuro na semana atual, e "próxima" foi dito,
-        // então queremos o dia da próxima semana.
-        if (dataCalculada.isSame(agoraEmSaoPaulo, 'day') || dataCalculada.isAfter(agoraEmSaoPaulo, 'day')) {
-            dataCalculada = dataCalculada.add(1, 'week');
-        }
-        // Se dayjs().day() já retornou um dia na próxima semana (porque o dia na semana atual já passou),
-        // e "próxima" foi dito, então já está correto.
-    } else { // Não disse "próxima"
-        // Se o dia calculado for anterior a hoje (dayjs.day() pode retornar dia da semana anterior),
-        // avançamos para a próxima ocorrência desse dia.
-        if (dataCalculada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
-            dataCalculada = dataCalculada.add(1, 'week');
-        }
+    let diff = (diaAlvoNum - hojeNum + 7) % 7;
+    if (diff === 0) { // Mesmo dia da semana
+        diff = ehProximaSemana ? 7 : 0; // Se for "próxima", avança 7 dias, senão é hoje.
+    } else if (ehProximaSemana) {
+        diff += 7; // Se pediu "próxima" e é um dia diferente, sempre avança para a semana seguinte à próxima ocorrência.
     }
-    dataBase = dataCalculada;
-    console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' interpretado como:`, dataBase.format('YYYY-MM-DD'));
+    // Se não é "próxima" e diff > 0, já está a apontar para o dia correto na semana atual ou na próxima.
+    
+    dataBase = agoraEmSaoPaulo.add(diff, 'day').startOf('day');
+    console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' (ehProxima: ${ehProximaSemana}, hojeNum: ${hojeNum}, diaAlvoNum: ${diaAlvoNum}, diff: ${diff}) interpretado como:`, dataBase.format('YYYY-MM-DD'));
   }
-  else { // Datas explícitas
+  else { 
     let dataParseada = null;
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', // Com ano explícito
-        'D MMMM', 'D [de] MMMM' // Sem ano explícito
+        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', 
+        'D MMMM', 'D [de] MMMM' 
     ];
+    const mesesPt = { // Para parse de "D de MMMM" se dayjs não pegar com locale
+        janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
+        julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12
+    };
 
-    for (const formato of formatosData) {
-      dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
-      if (dataParseada.isValid()) {
-        // Se o formato não especifica o ano (ex: 'D MMMM') e o ano não está na string original
-        if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
-            // Se a data parseada (considerando apenas dia/mês) for anterior a hoje, assume próximo ano
-            let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
-            if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
-                dataParseada = dataComAnoCorrente.add(1, 'year');
-            } else {
-                dataParseada = dataComAnoCorrente;
+    // Tentativa de parse com "D de MMMM [de YYYY]"
+    const matchMesExtenso = dataRelativa.match(/(\d{1,2})\s+de\s+([a-zA-Zçã]+)(?:\s+de\s+(\d{4}))?/i);
+    if (matchMesExtenso) {
+        const dia = parseInt(matchMesExtenso[1],10);
+        const nomeMes = matchMesExtenso[2].toLowerCase();
+        const mes = mesesPt[nomeMes];
+        let ano = matchMesExtenso[3] ? parseInt(matchMesExtenso[3],10) : agoraEmSaoPaulo.year();
+        if (dia && mes) {
+            dataParseada = dayjs.tz(`${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`, 'YYYY-MM-DD', TIMEZONE_REFERENCIA);
+            if (dataParseada.isValid() && !matchMesExtenso[3] && dataParseada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
+                dataParseada = dataParseada.year(agoraEmSaoPaulo.year() + 1);
             }
+            if(dataParseada.isValid()) console.log(`interpretarDataHora: Data por extenso parseada:`, dataParseada.format('YYYY-MM-DD'));
         }
-        console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
-        // Para datas explícitas, usamos a data parseada diretamente, mas precisamos garantir que está no fuso horário correto antes de aplicar horas
-        dataBase = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA); 
-        break; 
-      }
     }
-    if (!dataParseada || !dataParseada.isValid()) {
+
+    if (!dataParseada || !dataParseada.isValid()) { 
+        for (const formato of formatosData) {
+          dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
+          if (dataParseada.isValid()) {
+            if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
+                let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
+                if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
+                    dataParseada = dataComAnoCorrente.add(1, 'year');
+                } else {
+                    dataParseada = dataComAnoCorrente;
+                }
+            }
+            console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
+            break; 
+          }
+        }
+    }
+
+    if (dataParseada && dataParseada.isValid()) {
+      dataBase = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA); 
+    } else {
       console.error("interpretarDataHora: Formato de data não reconhecido:", dataRelativa);
       return null;
     }
@@ -125,10 +138,8 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   let horas = 0, minutos = 0;
   if (horarioProcessado === "meio-dia") { 
     horas = 12;
-    minutos = 0;
   } else if (horarioProcessado === "meia-noite") { 
     horas = 0;
-    minutos = 0;
   } else {
     const matchHorario = horarioProcessado.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i); 
     if (matchHorario) {
@@ -144,7 +155,6 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     }
   }
 
-  // dataBase já está no fuso de São Paulo e com a data correta
   const dataHoraFinalEmSaoPaulo = dataBase.hour(horas).minute(minutos).second(0).millisecond(0);
   if (!dataHoraFinalEmSaoPaulo.isValid()) {
       console.error("interpretarDataHora: Data/Hora final inválida em SP", dataHoraFinalEmSaoPaulo);
