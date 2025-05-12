@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Testador de Interpretação de Datas com Day.js</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Day.js + plug-ins -->
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/utc.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/timezone.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/customParseFormat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/relativeTime.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/localizedFormat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/locale/pt-br.js"></script>
+
+    <style>
+        body{font-family:sans-serif;padding:20px;background:#f4f4f9;color:#333}
+        .container{max-width:600px;margin:auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,.1)}
+        label{display:block;margin-bottom:8px;font-weight:700}
+        input[type="text"],input[type="date"]{width:calc(100% - 22px);padding:10px;margin-bottom:15px;border:1px solid #ddd;border-radius:4px}
+        button{background:#007bff;color:#fff;padding:10px 15px;border:none;border-radius:4px;cursor:pointer;font-size:16px}
+        button:hover{background:#0056b3}
+        #resultado{margin-top:20px;padding:15px;background:#e9ecef;border-radius:4px;white-space:pre-wrap;word-wrap:break-word;font-size:.9em}
+        .console-log{font-family:monospace;color:#555;margin-top:5px;border-bottom:1px dashed #ccc;padding-bottom:3px}
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="text-2xl font-bold mb-6 text-center">Testador de Datas</h1>
+
+    <div>
+        <label for="dataSimulada">Data de Hoje (para simulação – AAAA-MM-DD):</label>
+        <input type="date" id="dataSimulada">
+    </div>
+
+    <div>
+        <label for="dataRelativa">Texto da Data (ex: próxima sexta, amanhã, 15/07/2025):</label>
+        <input type="text" id="dataRelativa" value="próxima sexta">
+    </div>
+
+    <div>
+        <label for="horarioTexto">Texto do Horário (ex: 17:30, 10h, meio-dia):</label>
+        <input type="text" id="horarioTexto" value="17:30">
+    </div>
+
+    <button onclick="testarInterpretacao()">Interpretar Data e Hora</button>
+
+    <div id="resultado">Resultado aparecerá aqui…</div>
+</div>
+
+<script>
+/* --------- Configuração Day.js --------- */
+dayjs.extend(dayjs_plugin_utc);
+dayjs.extend(dayjs_plugin_timezone);
+dayjs.extend(dayjs_plugin_customParseFormat);
+dayjs.extend(dayjs_plugin_relativeTime);
+dayjs.extend(dayjs_plugin_localizedFormat);
+dayjs.locale('pt-br');
+
+const TIMEZONE_REFERENCIA = 'America/Sao_Paulo';
+
+/* --------- Função principal --------- */
+function interpretarDataHoraComDayjs(dataRelativa, horarioTexto, dataReferenciaSimulada) {
+    const resultadoDiv = document.getElementById('resultado');
+    resultadoDiv.innerHTML = '';
+
+    /*-- helper simples p/ “console” na tela --*/
+    const log = (msg, obj) => {
+        console.log(msg, obj || '');
+        const p = document.createElement('p');
+        p.className = 'console-log';
+        p.textContent = obj ? `${msg} ${JSON.stringify(obj)}` : msg;
+        resultadoDiv.appendChild(p);
+    };
+
+    if (!dataRelativa || !horarioTexto) return;
+
+    const agora = dataReferenciaSimulada
+        ? dayjs(dataReferenciaSimulada).tz(TIMEZONE_REFERENCIA, true)
+        : dayjs().tz(TIMEZONE_REFERENCIA);
+
+    let dataAlvo = agora.clone().startOf('day');
+    const texto = dataRelativa.toLowerCase().trim();
+
+    /* ---------- Datas relativas ---------- */
+    const diasSemana = { domingo:0, segunda:1, terca:2, terça:2, quarta:3,
+                         quinta:4, sexta:5, sabado:6, sábado:6 };
+
+    if (texto === 'hoje') {
+        /* já é hoje */
+    } else if (texto === 'amanhã' || texto === 'amanha') {
+        dataAlvo = dataAlvo.add(1, 'day');
+    } else {
+        /* trata “(próxima) <dia-da-semana>” */
+        let proxima = false;
+        let diaTxt = texto;
+        if (diaTxt.startsWith('próxima ')) {
+            proxima = true;
+            diaTxt = diaTxt.replace('próxima ', '');
+        }
+        diaTxt = diaTxt.replace('-feira', '').trim();
+
+        if (diasSemana[diaTxt] !== undefined) {
+            const alvoNum = diasSemana[diaTxt];
+            const hojeNum = agora.day();          // 0–6
+            let diff = (alvoNum - hojeNum + 7) % 7;
+
+            if (proxima) {
+                /* “próxima sexta” – se diff == 0 significa hoje.
+                   nesse caso pular p/ sexta da semana que vem; caso
+                   contrário use diff DESTA semana mesmo.  */
+                if (diff === 0) diff = 7;
+            } else {
+                /* só “sexta” sem “próxima” – se diff == 0 queremos hoje */
+            }
+
+            dataAlvo = agora.add(diff, 'day').startOf('day');
+            log(`Dia interpretado:`, dataAlvo.format('YYYY-MM-DD'));
+        } else {
+            log('Formato de data não reconhecido:', texto);
+            return null;
+        }
+    }
+
+    /* ---------- Horário ---------- */
+    let horas = 0, minutos = 0;
+    const hTxt = horarioTexto.toLowerCase().trim();
+    if (hTxt === 'meio-dia') horas = 12;
+    else if (hTxt === 'meia-noite') horas = 0;
+    else {
+        const m = hTxt.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/);
+        if (!m) { log('Horário inválido'); return null; }
+        horas = parseInt(m[1], 10);
+        minutos = m[2] ? parseInt(m[2], 10) : 0;
+    }
+
+    const dataHoraSP = dataAlvo.hour(horas).minute(minutos).second(0);
+    const dataHoraUTC = dataHoraSP.utc();
+
+    log('Data/Hora em São Paulo:', dataHoraSP.format('DD/MM/YYYY HH:mm:ss'));
+    log('Data/Hora em UTC:', dataHoraUTC.format());
+
+    return dataHoraUTC;
+}
+
+/* --------- Dispara ao clicar --------- */
+function testarInterpretacao() {
+    const dataRel = document.getElementById('dataRelativa').value;
+    const horaTxt = document.getElementById('horarioTexto').value;
+    const dataSim = document.getElementById('dataSimulada').value;
+    const ref = dataSim ? dayjs(dataSim) : dayjs();
+
+    const resUTC = interpretarDataHoraComDayjs(dataRel, horaTxt, ref);
+
+    if (resUTC && resUTC.isValid()) {
+        document.getElementById('resultado').innerHTML +=
+            `<p style="color:green;font-weight:bold;margin-top:10px">
+               ✅ UTC: ${resUTC.format()}
+             </p><p style="color:blue">
+               🇧🇷 São Paulo: ${resUTC.tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm:ss')}
+             </p>`;
+    } else {
+        document.getElementById('resultado').innerHTML +=
+            `<p style="color:red;font-weight:bold;margin-top:10px">
+               ❌ Falha na interpretação
+             </p>`;
+    }
+}
+
+/*-- Pré-preenche “hoje” no input de data simulada --*/
+document.getElementById('dataSimulada').value = dayjs().format('YYYY-MM-DD');
+</script>
+</body>
+</html>
