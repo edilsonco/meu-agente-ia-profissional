@@ -68,16 +68,17 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   else if (dataNorm === "amanhã" || dataNorm === "amanha") {
     dataBase = agoraEmSaoPaulo.add(1, 'day');
   } else if (diasDaSemana[dataNorm] !== undefined) {
-    const diaDesejado = diasDaSemana[dataNorm];
+    const diaDesejado = diasDaSemana[dataNorm]; // 0 (Dom) a 6 (Sab) para dayjs default
     let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); 
 
+    // Se o utilizador disse "próxima [dia da semana]"
     if (ehProximaSemana) {
-        // Se o dia calculado é hoje ou um dia futuro na semana atual, e "próxima" foi dito,
-        // então queremos o dia da próxima semana.
+        // Se o dia calculado por .day() for hoje ou um dia futuro na semana atual,
+        // então "próxima" significa a semana seguinte a essa.
         if (dataCalculada.isSame(agoraEmSaoPaulo, 'day') || dataCalculada.isAfter(agoraEmSaoPaulo, 'day')) {
             dataCalculada = dataCalculada.add(1, 'week');
         }
-        // Se dayjs().day() já retornou um dia na próxima semana (porque o dia na semana atual já passou),
+        // Se .day() já retornou um dia na próxima semana (porque o dia na semana atual já passou),
         // e "próxima" foi dito, então já está correto.
     } else { // Não disse "próxima"
         // Se o dia calculado for anterior a hoje (dayjs.day() pode retornar dia da semana anterior),
@@ -100,7 +101,9 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     for (const formato of formatosData) {
       dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
       if (dataParseada.isValid()) {
+        // Se o formato não especifica o ano (ex: 'D MMMM') e o ano não está na string original
         if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
+            // Se a data parseada (considerando apenas dia/mês) for anterior a hoje, assume próximo ano
             let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
             if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
                 dataParseada = dataComAnoCorrente.add(1, 'year');
@@ -123,8 +126,10 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   let horas = 0, minutos = 0;
   if (horarioProcessado === "meio-dia") { 
     horas = 12;
+    minutos = 0;
   } else if (horarioProcessado === "meia-noite") { 
     horas = 0;
+    minutos = 0;
   } else {
     const matchHorario = horarioProcessado.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i); 
     if (matchHorario) {
@@ -382,6 +387,7 @@ export default async function handler(req, res) {
                 break;
             }
             
+            // Verifica se PELO MENOS UM novo dado foi fornecido para alteração
             if (!novosDados.pessoa && 
                 (novosDados.data_relativa !== "manter" && !novosDados.data_relativa) && 
                 (novosDados.horario_texto !== "manter" && !novosDados.horario_texto) && 
@@ -421,6 +427,7 @@ export default async function handler(req, res) {
             let novaDataHoraUTC = null;
             const dadosUpdate = {};
 
+            // Lógica para novos dados de data/hora
             if (novosDados.data_relativa && novosDados.data_relativa !== "manter" && novosDados.horario_texto && novosDados.horario_texto !== "manter") {
                 novaDataHoraUTC = interpretarDataHoraComDayjs(novosDados.data_relativa, novosDados.horario_texto);
                 if (!novaDataHoraUTC) {
