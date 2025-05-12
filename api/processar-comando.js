@@ -44,7 +44,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     return null;
   }
   const agoraEmSaoPaulo = dayjs().tz(TIMEZONE_REFERENCIA);
-  let dataAlvo = agoraEmSaoPaulo.startOf('day'); // Começa com a data atual à meia-noite
+  let dataAlvo = agoraEmSaoPaulo.startOf('day'); // Inicia com a data atual à meia-noite
   let dataNorm = dataRelativa.toLowerCase().trim();
   
   let horarioProcessado = horarioTexto.toLowerCase().trim();
@@ -79,20 +79,24 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
         if (diff === 0) { // Mesmo dia da semana
             diff = ehProximaSemana ? 7 : 0; 
         } else if (ehProximaSemana) { 
-             // Se já é um dia futuro na semana atual, e pediu "próxima", adiciona 7
-            if (diaAlvoNum > hojeNum) { // Ex: Hoje Seg(1), pede próxima Qua(3). diff=2. diff+7=9.
+            // Se o dia alvo é depois de hoje na mesma semana, e pediu "próxima", adiciona 7
+            // Ex: Hoje Seg(1), pede próxima Qua(3). diff=2. diff+7=9.
+            // Se o dia alvo é antes ou hoje, o diff já calcula para a próxima semana.
+            if (diaAlvoNum > hojeNum) { 
                  diff += 7;
             }
-            // Se diaAlvoNum <= hojeNum (ex: Hoje Qua(3), pede próxima Seg(1). diff=5), já está na próxima semana.
         }
+        // Se não é "próxima" e diff > 0, já está a apontar para o dia correto na semana atual ou na próxima.
+        
         dataAlvo = agoraEmSaoPaulo.add(diff, 'day').startOf('day');
         console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' (ehProxima: ${ehProximaSemana}, hojeNum: ${hojeNum}, diaAlvoNum: ${diaAlvoNum}, diff: ${diff}) interpretado como:`, dataAlvo.format('YYYY-MM-DD'));
     } else { // Datas explícitas
         let dataParseada = null;
-        const mesesPt = {
+        const mesesPt = { // Para parse de "D de MMMM" se dayjs não pegar com locale
             janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
             julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12
         };
+        // Tenta primeiro o formato "D de MMMM [de YYYY]"
         const matchMesExtenso = dataNorm.match(/(\d{1,2})\s+(?:de\s+)?([a-zA-Zçã]+)(?:\s+(?:de\s+)?(\d{4}|\d{2}))?/i);
 
         if (matchMesExtenso) {
@@ -101,10 +105,12 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             const mes = mesesPt[nomeMes];
             let anoStr = matchMesExtenso[3];
             let ano = anoStr ? parseInt(anoStr, 10) : agoraEmSaoPaulo.year();
-            if (anoStr && anoStr.length === 2) ano += 2000;
+            if (anoStr && anoStr.length === 2) ano = 2000 + ano; // Converte ano de 2 dígitos para 4
             
             if (dia && mes) {
+                // Cria a data no fuso horário de referência para evitar ambiguidades
                 dataParseada = dayjs.tz(`${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`, 'YYYY-MM-DD', TIMEZONE_REFERENCIA);
+                // Se não especificou o ano e a data já passou este ano, assume próximo ano
                 if (dataParseada.isValid() && !matchMesExtenso[3] && dataParseada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
                     dataParseada = dataParseada.year(agoraEmSaoPaulo.year() + 1);
                 }
@@ -112,7 +118,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             }
         }
 
-        if (!dataParseada || !dataParseada.isValid()) { 
+        if (!dataParseada || !dataParseada.isValid()) { // Se o parse por extenso falhou, tenta os outros formatos
             const formatosData = ['DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY'];
             for (const formato of formatosData) {
               dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
