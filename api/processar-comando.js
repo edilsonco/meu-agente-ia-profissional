@@ -9,7 +9,7 @@ import relativeTime from 'dayjs/plugin/relativeTime.js';
 import localizedFormat from 'dayjs/plugin/localizedFormat.js'; 
 import 'dayjs/locale/pt-br.js';
 
-// BACKEND V26
+// BACKEND V29
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(customParseFormat);
@@ -44,7 +44,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     console.error("interpretarDataHora: Data ou Horário em falta para interpretação.", { dataRelativa, horarioTexto });
     return null;
   }
-  // Usar a data atual real para 'agora', a simulação é feita no testador.
+  
   const agoraEmSaoPaulo = dayjs().tz(TIMEZONE_REFERENCIA);
   let dataAlvo = agoraEmSaoPaulo.clone().startOf('day'); 
   let dataNorm = dataRelativa.toLowerCase().trim();
@@ -52,9 +52,9 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   let horarioProcessado = horarioTexto.toLowerCase().trim();
   horarioProcessado = horarioProcessado.replace(/^(umas\s+|por volta d[ao]s\s+)/, '');
 
-  console.log(`interpretarDataHora (v26): Input: dataRelativa='${dataRelativa}', horarioTexto='${horarioTexto}'`);
-  console.log(`interpretarDataHora (v26): Agora em São Paulo (referência): ${agoraEmSaoPaulo.format('YYYY-MM-DD HH:mm:ss Z')}`);
-  console.log(`interpretarDataHora (v26): Normalizado: dataNorm='${dataNorm}', horarioProcessado='${horarioProcessado}'`);
+  console.log(`interpretarDataHora (v29): Input: dataRelativa='${dataRelativa}', horarioTexto='${horarioTexto}'`);
+  console.log(`interpretarDataHora (v29): Agora em São Paulo (referência): ${agoraEmSaoPaulo.format('YYYY-MM-DD HH:mm:ss Z')}`);
+  console.log(`interpretarDataHora (v29): Normalizado: dataNorm='${dataNorm}', horarioProcessado='${horarioProcessado}'`);
 
   const diasDaSemanaMap = {
     domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6
@@ -76,44 +76,21 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
 
     if (diasDaSemanaMap[nomeDiaParaBusca] !== undefined) {
         const diaAlvoNum = diasDaSemanaMap[nomeDiaParaBusca];
-        const hojeNum = agoraEmSaoPaulo.day(); // Dia da semana atual (0=Dom, 6=Sab)
+        const hojeNum = agoraEmSaoPaulo.day(); 
         
         let diff = (diaAlvoNum - hojeNum + 7) % 7;
-        if (diff === 0 && ehProximaSemana) { 
-            diff = 7;
-        } else if (diff !== 0 && ehProximaSemana) { 
-            // Se pediu "próxima" e o dia alvo é futuro nesta semana, adiciona 7
-            if (diaAlvoNum > hojeNum) { 
-                 diff += 7;
+        if (ehProximaSemana) {
+            if (diff === 0) { // Se é o mesmo dia da semana e pediu "próxima"
+                diff = 7;
             }
-            // Se diaAlvoNum <= hojeNum, o diff já calcula para a próxima semana, e "próxima" reforça isso.
-            // A lógica (diaAlvoNum - hojeNum + 7) % 7 já nos dá a próxima ocorrência.
-            // Se "próxima" é dito, queremos a ocorrência DEPOIS dessa que seria a "natural".
-            // Ex: Hoje Seg(1), pede "próxima Qua"(3). diff=2 (esta quarta). Queremos a da outra semana. diff+7 = 9.
-            // Ex: Hoje Sex(5), pede "próxima Seg"(1). diff=3 (segunda da prox semana). Queremos a DEPOIS dessa. diff+7 = 10.
-            // A sugestão da outra IA: se diff === 0, diff = 7. dataAtual.add(diff, 'day') parece mais simples para "próxima"
-            // Vamos usar a lógica da outra IA para "próxima" diretamente:
-            let tempDate = agoraEmSaoPaulo.clone();
-            let currentDayNum = tempDate.day();
-            let daysToAdd = (diaAlvoNum - currentDayNum + 7) % 7;
-            if (daysToAdd === 0 && ehProximaSemana) { // Se é o mesmo dia e pediu "próxima"
-                daysToAdd = 7;
-            } else if (daysToAdd === 0 && !ehProximaSemana) { // Se é o mesmo dia e não pediu "próxima"
-                 daysToAdd = 0; // É hoje
-            } else if (ehProximaSemana) { // Se pediu "próxima" e é um dia diferente
-                 daysToAdd = ((diaAlvoNum - currentDayNum + 7) % 7) + 7; // Garante que pula para a próxima semana
+            // Se não é o mesmo dia, e pediu "próxima", a lógica de diff já aponta para a próxima semana
+            // ou para um dia futuro nesta semana. Se for futuro nesta semana, adicionar 7.
+            else if (diaAlvoNum > hojeNum) {
+                 diff +=7;
             }
-            // Se não pediu "próxima", daysToAdd já está correto para a próxima ocorrência.
-            dataAlvo = agoraEmSaoPaulo.add(daysToAdd, 'day').startOf('day');
-
-        } else { // Não é "próxima"
-            let dataCalculada = agoraEmSaoPaulo.clone().day(diaAlvoNum);
-            if (dataCalculada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
-                dataCalculada = dataCalculada.add(1, 'week');
-            }
-            dataAlvo = dataCalculada.startOf('day');
         }
-        console.log(`interpretarDataHora (v26): Dia da semana '${dataRelativa}' (ehProxima: ${ehProximaSemana}) interpretado como:`, dataAlvo.format('YYYY-MM-DD'));
+        dataAlvo = agoraEmSaoPaulo.add(diff, 'day').startOf('day');
+        console.log(`interpretarDataHora (v29): Dia da semana '${dataRelativa}' (ehProxima: ${ehProximaSemana}, hojeNum: ${hojeNum}, diaAlvoNum: ${diaAlvoNum}, diff: ${diff}) interpretado como:`, dataAlvo.format('YYYY-MM-DD'));
     } else { // Datas explícitas
         let dataParseada = null;
         const mesesPt = { 
@@ -135,7 +112,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
                 if (dataParseada.isValid() && !matchMesExtenso[3] && dataParseada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
                     dataParseada = dataParseada.year(agoraEmSaoPaulo.year() + 1);
                 }
-                if(dataParseada.isValid()) console.log(`interpretarDataHora (v26): Data por extenso parseada:`, dataParseada.format('YYYY-MM-DD'));
+                if(dataParseada.isValid()) console.log(`interpretarDataHora (v29): Data por extenso parseada:`, dataParseada.format('YYYY-MM-DD'));
             }
         }
 
@@ -144,7 +121,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             for (const formato of formatosData) {
               dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
               if (dataParseada.isValid()) {
-                console.log(`interpretarDataHora (v26): Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
+                console.log(`interpretarDataHora (v29): Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
                 break; 
               }
             }
@@ -153,7 +130,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
         if (dataParseada && dataParseada.isValid()) {
           dataAlvo = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA).startOf('day'); 
         } else {
-          console.error("interpretarDataHora (v26): Formato de data não reconhecido:", dataRelativa);
+          console.error("interpretarDataHora (v29): Formato de data não reconhecido:", dataRelativa);
           return null;
         }
     }
@@ -171,28 +148,28 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
       horas = parseInt(matchHorario[1], 10);
       minutos = matchHorario[2] ? parseInt(matchHorario[2], 10) : 0;
       if (horas < 0 || horas > 23 || minutos < 0 || minutos > 59) {
-          console.error("interpretarDataHora (v26): Horas/minutos inválidos", {horas, minutos});
+          console.error("interpretarDataHora (v29): Horas/minutos inválidos", {horas, minutos});
           return null;
       }
     } else { 
-      console.error("interpretarDataHora (v26): Formato de horário não reconhecido", horarioProcessado);
+      console.error("interpretarDataHora (v29): Formato de horário não reconhecido", horarioProcessado);
       return null; 
     }
   }
 
   const dataHoraFinalEmSaoPaulo = dataAlvo.hour(horas).minute(minutos).second(0).millisecond(0);
   if (!dataHoraFinalEmSaoPaulo.isValid()) {
-      console.error("interpretarDataHora (v26): Data/Hora final inválida em SP", dataHoraFinalEmSaoPaulo);
+      console.error("interpretarDataHora (v29): Data/Hora final inválida em SP", dataHoraFinalEmSaoPaulo);
       return null;
   }
-  console.log("interpretarDataHora (v26): Data/Hora final em São Paulo:", dataHoraFinalEmSaoPaulo.format('YYYY-MM-DD HH:mm:ss Z'));
+  console.log("interpretarDataHora (v29): Data/Hora final em São Paulo:", dataHoraFinalEmSaoPaulo.format('YYYY-MM-DD HH:mm:ss Z'));
   return dataHoraFinalEmSaoPaulo.utc();
 }
 
 async function gerarRespostaConversacional(contextoParaIA) {
   if (!openai) return "Desculpe, estou com problemas para gerar uma resposta neste momento (IA não configurada).";
   
-  console.log("Backend (v26): Gerando resposta conversacional com contexto:", contextoParaIA);
+  console.log("Backend (v29): Gerando resposta conversacional com contexto:", contextoParaIA);
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
@@ -207,15 +184,15 @@ async function gerarRespostaConversacional(contextoParaIA) {
     });
     return completion.choices[0].message.content.trim();
   } catch (error) {
-    console.error("Backend (v26): Erro ao gerar resposta conversacional com OpenAI:", error);
+    console.error("Backend (v29): Erro ao gerar resposta conversacional com OpenAI:", error);
     return "Peço desculpa, ocorreu um erro ao tentar processar a sua resposta.";
   }
 }
 
 // --- Função Principal da Serverless Function ---
 export default async function handler(req, res) {
-  // BACKEND V26 - Log de início
-  console.log("Backend (v26): Função handler iniciada.");
+  // BACKEND V29 - Log de início
+  console.log("Backend (v29): Função handler iniciada.");
 
   if (req.method !== 'POST') {
     return res.status(405).json({ mensagem: `Método ${req.method} não permitido.` });
@@ -223,7 +200,7 @@ export default async function handler(req, res) {
   const { comando } = req.body;
   if (!comando) return res.status(400).json({ mensagem: "Nenhum comando fornecido." });
 
-  console.log("Backend (v26): Comando recebido:", comando);
+  console.log("Backend (v29): Comando recebido:", comando);
   if (!openai || !supabase) return res.status(500).json({ mensagem: "Erro de configuração interna do servidor." });
 
   let mensagemParaFrontend = "";
@@ -270,7 +247,7 @@ export default async function handler(req, res) {
       Se a intenção for 'alterar_reuniao', foque em identificar a reunião alvo (via 'id_reuniao' ou 'pessoa_alvo', 'data_alvo', 'horario_alvo') E os novos dados ('pessoa_alteracao', 'data_alteracao', 'horario_alteracao'). Se para 'data_alteracao' ou 'horario_alteracao' o utilizador indicar para manter o original, preencha o campo correspondente com "manter". Se apenas um novo detalhe for fornecido (ex: só nova pessoa) e o utilizador indicar "na mesma data e horário", data_alteracao e horario_alteracao devem ser "manter".
       Responda APENAS com o objeto JSON.
     `;
-    console.log("Backend (v26): Enviando para OpenAI para extração...");
+    console.log("Backend (v29): Enviando para OpenAI para extração...");
     const extracaoOpenAI = await openai.chat.completions.create({
       model: "gpt-3.5-turbo-0125", 
       messages: [{ role: "user", content: promptExtracao }],
@@ -279,18 +256,18 @@ export default async function handler(req, res) {
 
     let dadosComando;
     try {
-      console.log("Backend (v26): Resposta JSON BRUTA da OpenAI:", extracaoOpenAI.choices[0].message.content);
+      console.log("Backend (v29): Resposta JSON BRUTA da OpenAI:", extracaoOpenAI.choices[0].message.content);
       dadosComando = JSON.parse(extracaoOpenAI.choices[0].message.content);
     } catch (e) {
-      console.error("Backend (v26): Erro parse JSON da extração OpenAI:", e, extracaoOpenAI.choices[0].message.content);
+      console.error("Backend (v29): Erro parse JSON da extração OpenAI:", e, extracaoOpenAI.choices[0].message.content);
       mensagemParaFrontend = await gerarRespostaConversacional("Peço desculpa, tive um problema ao entender o seu pedido inicial. Poderia tentar de novo?");
       return res.status(500).json({ mensagem: mensagemParaFrontend });
     }
-    console.log("Backend (v26): Dados extraídos pela OpenAI:", dadosComando);
+    console.log("Backend (v29): Dados extraídos pela OpenAI:", dadosComando);
 
     // ETAPA 2: Lógica de Negócio e Supabase
     if (dadosComando.mensagem_clarificacao_necessaria) {
-      console.log("Backend (v26): Clarificação necessária:", dadosComando.mensagem_clarificacao_necessaria);
+      console.log("Backend (v29): Clarificação necessária:", dadosComando.mensagem_clarificacao_necessaria);
       let contextoClarificacao = `O utilizador disse: "${comando}". Parece que preciso de mais informações: ${dadosComando.mensagem_clarificacao_necessaria}. Por favor, formule uma pergunta amigável e específica ao utilizador para obter estes detalhes.`;
       if (dadosComando.intencao === "marcar_reuniao") {
            contextoClarificacao = `O utilizador quer marcar um compromisso e disse: "${comando}". Para continuar, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação de forma natural.`;
@@ -362,11 +339,11 @@ export default async function handler(req, res) {
           break;
 
         case "cancelar_reuniao":
-          console.log("Backend (v26): Intenção de cancelar reunião detectada.");
+          console.log("Backend (v29): Intenção de cancelar reunião detectada.");
           let idParaCancelar = dadosComando.id_reuniao;
           
           if (!idParaCancelar && dadosComando.pessoa_alvo && dadosComando.data_alvo && dadosComando.horario_alvo) {
-            console.log("Backend (v26): Tentando encontrar para cancelar por descrição:", dadosComando.pessoa_alvo, dadosComando.data_alvo, dadosComando.horario_alvo);
+            console.log("Backend (v29): Tentando encontrar para cancelar por descrição:", dadosComando.pessoa_alvo, dadosComando.data_alvo, dadosComando.horario_alvo);
             const dataHoraAlvoUTC = interpretarDataHoraComDayjs(dadosComando.data_alvo, dadosComando.horario_alvo);
             if (dataHoraAlvoUTC) {
               const { data: reunioesEncontradas, error: erroBuscaDesc } = await supabase
@@ -410,7 +387,7 @@ export default async function handler(req, res) {
              if (!mensagemParaFrontend) { 
                 mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei o compromisso que pediu para cancelar com ${dadosComando.pessoa_alvo} para ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}. Pode verificar os detalhes ou listar seus compromissos?`);
              }
-          } else if (idParaCancelar) { // Se idParaCancelar existe mas não é válido (ex: não é número ou <=0)
+          } else if (idParaCancelar) { 
             mensagemParaFrontend = await gerarRespostaConversacional(`O ID fornecido para cancelar o compromisso não é válido. Por favor, tente descrever o compromisso (pessoa, data e hora). Comando: "${comando}"`);
           }
           break;
@@ -536,7 +513,7 @@ export default async function handler(req, res) {
             const { data: updateData, error: erroUpdate } = await supabase.from('reunioes').update(dadosUpdate).match({ id: idParaAlterarOriginal }).select().single();
             
             if (erroUpdate || !updateData) {
-                 console.error("Backend (v26): Erro ao alterar ou compromisso não encontrado:", erroUpdate);
+                 console.error("Backend (v27): Erro ao alterar ou compromisso não encontrado:", erroUpdate);
                  mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui alterar o compromisso com ID ${idParaAlterarOriginal}. Verifique se o ID está correto ou se o compromisso existe.`);
                  break;
             }
@@ -560,7 +537,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ mensagem: mensagemParaFrontend });
 
   } catch (error) {
-    console.error("Backend (v26): Erro geral no processamento do comando:", error);
+    console.error("Backend (v27): Erro geral no processamento do comando:", error);
     let mensagemErro = "Peço desculpa, ocorreu um erro inesperado ao processar o seu pedido.";
     if (error.response?.data?.error?.message) { 
         mensagemErro = `Erro da IA: ${error.response.data.error.message}`;
