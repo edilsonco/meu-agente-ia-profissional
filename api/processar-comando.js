@@ -68,21 +68,14 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   else if (dataNorm === "amanhã" || dataNorm === "amanha") {
     dataBase = agoraEmSaoPaulo.add(1, 'day');
   } else if (diasDaSemana[dataNorm] !== undefined) {
-    const diaDesejado = diasDaSemana[dataNorm]; // 0 (Dom) a 6 (Sab) para dayjs default
+    const diaDesejado = diasDaSemana[dataNorm];
     let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); 
 
-    // Se o utilizador disse "próxima [dia da semana]"
     if (ehProximaSemana) {
-        // Se o dia calculado por .day() for hoje ou um dia futuro na semana atual,
-        // então "próxima" significa a semana seguinte a essa.
         if (dataCalculada.isSame(agoraEmSaoPaulo, 'day') || dataCalculada.isAfter(agoraEmSaoPaulo, 'day')) {
             dataCalculada = dataCalculada.add(1, 'week');
         }
-        // Se .day() já retornou um dia na próxima semana (porque o dia na semana atual já passou),
-        // e "próxima" foi dito, então já está correto.
-    } else { // Não disse "próxima"
-        // Se o dia calculado for anterior a hoje (dayjs.day() pode retornar dia da semana anterior),
-        // avançamos para a próxima ocorrência desse dia.
+    } else { 
         if (dataCalculada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
             dataCalculada = dataCalculada.add(1, 'week');
         }
@@ -90,20 +83,18 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     dataBase = dataCalculada;
     console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' interpretado como:`, dataBase.format('YYYY-MM-DD'));
   }
-  else { // Datas explícitas
+  else { 
     let dataParseada = null;
     const formatosData = [
         'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', // Com ano explícito
-        'D MMMM', 'D [de] MMMM' // Sem ano explícito
+        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', 
+        'D MMMM', 'D [de] MMMM' 
     ];
 
     for (const formato of formatosData) {
       dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
       if (dataParseada.isValid()) {
-        // Se o formato não especifica o ano (ex: 'D MMMM') e o ano não está na string original
         if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
-            // Se a data parseada (considerando apenas dia/mês) for anterior a hoje, assume próximo ano
             let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
             if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
                 dataParseada = dataComAnoCorrente.add(1, 'year');
@@ -112,7 +103,6 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             }
         }
         console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
-        // Para datas explícitas, usamos a data parseada diretamente, mas precisamos garantir que está no fuso horário correto antes de aplicar horas
         dataBase = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA); 
         break; 
       }
@@ -126,10 +116,8 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   let horas = 0, minutos = 0;
   if (horarioProcessado === "meio-dia") { 
     horas = 12;
-    minutos = 0;
   } else if (horarioProcessado === "meia-noite") { 
     horas = 0;
-    minutos = 0;
   } else {
     const matchHorario = horarioProcessado.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i); 
     if (matchHorario) {
@@ -145,7 +133,6 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     }
   }
 
-  // dataBase já está no fuso de São Paulo e com a data correta
   const dataHoraFinalEmSaoPaulo = dataBase.hour(horas).minute(minutos).second(0).millisecond(0);
   if (!dataHoraFinalEmSaoPaulo.isValid()) {
       console.error("interpretarDataHora: Data/Hora final inválida em SP", dataHoraFinalEmSaoPaulo);
@@ -344,7 +331,13 @@ export default async function handler(req, res) {
                  let listaAmbigua = reunioesEncontradas.map(r => `${r.tipo_compromisso || 'Compromisso'} com ${r.pessoa} em ${dayjs(r.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`).join("\n");
                  mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei vários compromissos para ${dadosComando.pessoa_alvo} em ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}:\n${listaAmbigua}\nPeça para o utilizador especificar qual deles quer cancelar.`);
                  break; 
+              } else { // Nenhuma encontrada por descrição
+                mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei nenhum compromisso com ${dadosComando.pessoa_alvo} para ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}. Gostaria de verificar os detalhes ou listar seus compromissos?`);
+                break;
               }
+            } else { // Não conseguiu interpretar data/hora da descrição
+                 mensagemParaFrontend = await gerarRespostaConversacional(`Não consegui entender a data ou hora ("${dadosComando.data_alvo}" às "${dadosComando.horario_alvo}") do compromisso que quer cancelar. Pode tentar de novo com outros detalhes?`);
+                 break;
             }
           }
 
@@ -363,8 +356,13 @@ export default async function handler(req, res) {
             const tipoCancelado = reuniaoParaCancelar.tipo_compromisso || "compromisso";
             const reuniaoCanceladaInfo = `o ${tipoCancelado} com ${reuniaoParaCancelar.pessoa} de ${dayjs(reuniaoParaCancelar.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`;
             mensagemParaFrontend = await gerarRespostaConversacional(`Confirme ao utilizador que ${reuniaoCanceladaInfo} foi cancelado com sucesso.`);
-          } else { 
-            mensagemParaFrontend = await gerarRespostaConversacional(`O utilizador pediu para cancelar um compromisso, mas não forneceu um ID válido nem detalhes suficientes (pessoa, data e hora do compromisso a cancelar). Peça as informações necessárias. Comando: "${comando}"`);
+          } else if (!idParaCancelar) { // Se não conseguiu encontrar por descrição e não tinha ID
+             // A mensagem já foi definida acima no bloco 'else' de 'reunioesEncontradas'
+             if (!mensagemParaFrontend) { // Segurança, caso não tenha caído no 'else' acima
+                mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei o compromisso que pediu para cancelar com ${dadosComando.pessoa_alvo} para ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}. Pode verificar os detalhes ou listar seus compromissos?`);
+             }
+          } else { // ID inválido
+            mensagemParaFrontend = await gerarRespostaConversacional(`O ID fornecido para cancelar o compromisso não é válido. Por favor, tente descrever o compromisso (pessoa, data e hora). Comando: "${comando}"`);
           }
           break;
         
@@ -387,7 +385,6 @@ export default async function handler(req, res) {
                 break;
             }
             
-            // Verifica se PELO MENOS UM novo dado foi fornecido para alteração
             if (!novosDados.pessoa && 
                 (novosDados.data_relativa !== "manter" && !novosDados.data_relativa) && 
                 (novosDados.horario_texto !== "manter" && !novosDados.horario_texto) && 
@@ -419,7 +416,7 @@ export default async function handler(req, res) {
                     mensagemParaFrontend = await gerarRespostaConversacional(`Encontrei vários compromissos para ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal}. São eles:\n${listaAmbiguaAlterar}\nPreciso que especifique qual deles quer alterar (ex: "o primeiro", "o almoço das 10h").`);
                     break;
                 } else {
-                    mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei o compromisso com ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal} para alterar.`);
+                    mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei o compromisso com ${pessoaAlvoOriginal} em ${dataAlvoOriginal} às ${horarioAlvoOriginal} para alterar. Gostaria de verificar os detalhes ou listar seus compromissos?`);
                     break;
                 }
             }
@@ -427,7 +424,6 @@ export default async function handler(req, res) {
             let novaDataHoraUTC = null;
             const dadosUpdate = {};
 
-            // Lógica para novos dados de data/hora
             if (novosDados.data_relativa && novosDados.data_relativa !== "manter" && novosDados.horario_texto && novosDados.horario_texto !== "manter") {
                 novaDataHoraUTC = interpretarDataHoraComDayjs(novosDados.data_relativa, novosDados.horario_texto);
                 if (!novaDataHoraUTC) {
