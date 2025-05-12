@@ -44,7 +44,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     return null;
   }
   const agoraEmSaoPaulo = dayjs().tz(TIMEZONE_REFERENCIA);
-  let dataBase = agoraEmSaoPaulo; 
+  let dataBase = agoraEmSaoPaulo.startOf('day'); // Começar com a data base à meia-noite para evitar confusões de hora
   let dataNorm = dataRelativa.toLowerCase();
   
   let ehProximaSemana = false;
@@ -52,36 +52,42 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
       dataNorm = dataNorm.substring("próxima ".length);
       ehProximaSemana = true;
   }
-  dataNorm = dataNorm.replace("-feira", ""); 
+  dataNorm = dataNorm.replace("-feira", "").trim(); 
   
   let horarioProcessado = horarioTexto.toLowerCase();
-  horarioProcessado = horarioProcessado.replace(/^(umas\s+|por volta d[ao]s\s+)/, '');
+  horarioProcessado = horarioProcessado.replace(/^(umas\s+|por volta d[ao]s\s+)/, '').trim();
 
-
-  const diasDaSemana = {
+  const diasDaSemanaMap = {
     domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6
   };
 
   if (dataNorm === "hoje") { 
-    dataBase = agoraEmSaoPaulo; 
+    dataBase = agoraEmSaoPaulo.startOf('day'); 
   } 
   else if (dataNorm === "amanhã" || dataNorm === "amanha") {
-    dataBase = agoraEmSaoPaulo.add(1, 'day');
-  } else if (diasDaSemana[dataNorm] !== undefined) {
-    const diaDesejado = diasDaSemana[dataNorm];
-    let dataCalculada = agoraEmSaoPaulo.day(diaDesejado); 
+    dataBase = agoraEmSaoPaulo.add(1, 'day').startOf('day');
+  } else if (diasDaSemanaMap[dataNorm] !== undefined) {
+    const diaAlvoNum = diasDaSemanaMap[dataNorm];
+    const hojeNum = agoraEmSaoPaulo.day(); // 0 para Domingo, 6 para Sábado
 
-    if (ehProximaSemana) {
-        if (dataCalculada.isSame(agoraEmSaoPaulo, 'day') || dataCalculada.isAfter(agoraEmSaoPaulo, 'day')) {
-            dataCalculada = dataCalculada.add(1, 'week');
-        }
-    } else { 
-        if (dataCalculada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
-            dataCalculada = dataCalculada.add(1, 'week');
-        }
+    let diff = (diaAlvoNum - hojeNum + 7) % 7;
+    if (diff === 0 && ehProximaSemana) { // Se é o mesmo dia da semana e pediu "próxima"
+        diff = 7;
+    } else if (diff === 0 && !ehProximaSemana) { // Se é o mesmo dia da semana e não pediu "próxima" (significa hoje)
+        diff = 0; 
+    } else if (diff !== 0 && ehProximaSemana && diaAlvoNum > hojeNum) {
+        // Ex: Hoje é Seg (1), pede "próxima quarta" (3). diff = 2. Adicionar 7.
+        // Ex: Hoje é Seg (1), pede "próxima segunda" (1). diff = 0 -> 7.
+        // Se o dia alvo já é depois de hoje na mesma semana, e pediu "próxima", adiciona 7.
+         diff +=7;
+    } else if (diff !== 0 && ehProximaSemana && diaAlvoNum <= hojeNum) {
+        // Ex: Hoje é Sex (5), pede "próxima segunda" (1). diff = 3 (segunda da semana que vem). Correto.
+        // Não precisa de ajuste adicional se já calculou para a próxima semana.
     }
-    dataBase = dataCalculada;
-    console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' interpretado como:`, dataBase.format('YYYY-MM-DD'));
+
+
+    dataBase = agoraEmSaoPaulo.add(diff, 'day').startOf('day');
+    console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' (ehProxima: ${ehProximaSemana}, hojeNum: ${hojeNum}, diaAlvoNum: ${diaAlvoNum}, diff: ${diff}) interpretado como:`, dataBase.format('YYYY-MM-DD'));
   }
   else { 
     let dataParseada = null;
@@ -90,24 +96,48 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
         'D MMMM YYYY', 'D [de] MMMM [de] YYYY', 
         'D MMMM', 'D [de] MMMM' 
     ];
+    const mesesPt = {
+        janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
+        julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12
+    };
 
-    for (const formato of formatosData) {
-      dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
-      if (dataParseada.isValid()) {
-        if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
-            let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
-            if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
-                dataParseada = dataComAnoCorrente.add(1, 'year');
-            } else {
-                dataParseada = dataComAnoCorrente;
+    // Tentativa de parse com "D de MMMM [de YYYY]"
+    const matchMesExtenso = dataRelativa.match(/(\d{1,2})\s+de\s+([a-zA-Zçã]+)(?:\s+de\s+(\d{4}))?/i);
+    if (matchMesExtenso) {
+        const dia = parseInt(matchMesExtenso[1],10);
+        const nomeMes = matchMesExtenso[2].toLowerCase();
+        const mes = mesesPt[nomeMes];
+        const ano = matchMesExtenso[3] ? parseInt(matchMesExtenso[3],10) : agoraEmSaoPaulo.year();
+        if (dia && mes) {
+            dataParseada = dayjs.tz(`${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`, TIMEZONE_REFERENCIA);
+            if (dataParseada.isValid() && !matchMesExtenso[3] && dataParseada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
+                dataParseada = dataParseada.year(agoraEmSaoPaulo.year() + 1);
             }
+            console.log(`interpretarDataHora: Data por extenso parseada:`, dataParseada.format('YYYY-MM-DD'));
         }
-        console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
-        dataBase = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA); 
-        break; 
-      }
     }
-    if (!dataParseada || !dataParseada.isValid()) {
+
+    if (!dataParseada || !dataParseada.isValid()) { // Se o parse por extenso falhou, tenta os outros formatos
+        for (const formato of formatosData) {
+          dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
+          if (dataParseada.isValid()) {
+            if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
+                let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
+                if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
+                    dataParseada = dataComAnoCorrente.add(1, 'year');
+                } else {
+                    dataParseada = dataComAnoCorrente;
+                }
+            }
+            console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
+            break; 
+          }
+        }
+    }
+
+    if (dataParseada && dataParseada.isValid()) {
+      dataBase = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA); 
+    } else {
       console.error("interpretarDataHora: Formato de data não reconhecido:", dataRelativa);
       return null;
     }
@@ -356,12 +386,11 @@ export default async function handler(req, res) {
             const tipoCancelado = reuniaoParaCancelar.tipo_compromisso || "compromisso";
             const reuniaoCanceladaInfo = `o ${tipoCancelado} com ${reuniaoParaCancelar.pessoa} de ${dayjs(reuniaoParaCancelar.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm')}`;
             mensagemParaFrontend = await gerarRespostaConversacional(`Confirme ao utilizador que ${reuniaoCanceladaInfo} foi cancelado com sucesso.`);
-          } else if (!idParaCancelar) { // Se não conseguiu encontrar por descrição e não tinha ID
-             // A mensagem já foi definida acima no bloco 'else' de 'reunioesEncontradas'
-             if (!mensagemParaFrontend) { // Segurança, caso não tenha caído no 'else' acima
+          } else if (!idParaCancelar) { 
+             if (!mensagemParaFrontend) { 
                 mensagemParaFrontend = await gerarRespostaConversacional(`Não encontrei o compromisso que pediu para cancelar com ${dadosComando.pessoa_alvo} para ${dadosComando.data_alvo} às ${dadosComando.horario_alvo}. Pode verificar os detalhes ou listar seus compromissos?`);
              }
-          } else { // ID inválido
+          } else { 
             mensagemParaFrontend = await gerarRespostaConversacional(`O ID fornecido para cancelar o compromisso não é válido. Por favor, tente descrever o compromisso (pessoa, data e hora). Comando: "${comando}"`);
           }
           break;
