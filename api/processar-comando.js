@@ -43,58 +43,83 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     console.error("interpretarDataHora: Data ou Horário em falta para interpretação.", { dataRelativa, horarioTexto });
     return null;
   }
+
   const agoraEmSaoPaulo = dayjs().tz(TIMEZONE_REFERENCIA);
-  let dataBase = agoraEmSaoPaulo.startOf('day'); // Começa com a data base à meia-noite para consistência
-  let dataNorm = dataRelativa.toLowerCase();
+  let dataAlvo = agoraEmSaoPaulo.startOf('day'); // Inicia com a data atual à meia-noite
+  let dataNorm = dataRelativa.toLowerCase().trim();
   
+  let horarioProcessado = horarioTexto.toLowerCase().trim();
+  horarioProcessado = horarioProcessado.replace(/^(umas\s+|por volta d[ao]s\s+)/, '');
+
+  console.log(`interpretarDataHora: Input: dataRelativa='${dataRelativa}', horarioTexto='${horarioTexto}'`);
+  console.log(`interpretarDataHora: Normalizado: dataNorm='${dataNorm}', horarioProcessado='${horarioProcessado}'`);
+
+  // 1. Interpretar Horário Primeiro (meio-dia, meia-noite, HH:MM, HHh)
+  let horas = null, minutos = null;
+  if (horarioProcessado === "meio-dia") {
+    horas = 12; minutos = 0;
+  } else if (horarioProcessado === "meia-noite") {
+    horas = 0; minutos = 0;
+  } else {
+    const matchHorario = horarioProcessado.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i);
+    if (matchHorario) {
+      horas = parseInt(matchHorario[1], 10);
+      minutos = matchHorario[2] ? parseInt(matchHorario[2], 10) : 0;
+      if (horas < 0 || horas > 23 || minutos < 0 || minutos > 59) {
+        console.error("interpretarDataHora: Horas/minutos inválidos", {horas, minutos});
+        return null;
+      }
+    } else {
+      console.error("interpretarDataHora: Formato de horário não reconhecido", horarioProcessado);
+      return null;
+    }
+  }
+  console.log(`interpretarDataHora: Horário parseado: ${horas}h${minutos}m`);
+
+  // 2. Interpretar Data
   let ehProximaSemana = false;
   if (dataNorm.startsWith("próxima ")) {
-      dataNorm = dataNorm.substring("próxima ".length);
+      dataNorm = dataNorm.substring("próxima ".length).trim();
       ehProximaSemana = true;
   }
-  dataNorm = dataNorm.replace("-feira", "").trim(); 
-  
-  let horarioProcessado = horarioTexto.toLowerCase();
-  horarioProcessado = horarioProcessado.replace(/^(umas\s+|por volta d[ao]s\s+)/, '').trim();
+  dataNorm = dataNorm.replace("-feira", "").trim();
 
   const diasDaSemanaMap = {
     domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6
   };
 
   if (dataNorm === "hoje") { 
-    dataBase = agoraEmSaoPaulo.startOf('day'); 
-  } 
-  else if (dataNorm === "amanhã" || dataNorm === "amanha") {
-    dataBase = agoraEmSaoPaulo.add(1, 'day').startOf('day');
+    dataAlvo = agoraEmSaoPaulo.startOf('day'); 
+  } else if (dataNorm === "amanhã" || dataNorm === "amanha") {
+    dataAlvo = agoraEmSaoPaulo.add(1, 'day').startOf('day');
   } else if (diasDaSemanaMap[dataNorm] !== undefined) {
     const diaAlvoNum = diasDaSemanaMap[dataNorm];
-    const hojeNum = agoraEmSaoPaulo.day(); // 0 para Domingo, 6 para Sábado
+    const hojeNum = agoraEmSaoPaulo.day();
 
     let diff = (diaAlvoNum - hojeNum + 7) % 7;
     if (diff === 0) { // Mesmo dia da semana
-        diff = ehProximaSemana ? 7 : 0; // Se for "próxima", avança 7 dias, senão é hoje.
-    } else if (ehProximaSemana) {
-        diff += 7; // Se pediu "próxima" e é um dia diferente, sempre avança para a semana seguinte à próxima ocorrência.
+        diff = ehProximaSemana ? 7 : 0; 
+    } else if (ehProximaSemana) { // Se pediu "próxima" e é um dia diferente
+        // A lógica (diaAlvoNum - hojeNum + 7) % 7 já dá a próxima ocorrência.
+        // Se é "próxima" e o diff já é > 0 (ou seja, já está na próxima semana ou mais tarde na semana atual),
+        // precisamos garantir que é realmente na *próxima* semana calendário se o dia já passou ou é hoje.
+        // Se diff > 0 e o diaAlvoNum > hojeNum (ex: hoje Seg, pede próxima Qua), diff = 2. Adicionar 7.
+        // Se diff > 0 e o diaAlvoNum < hojeNum (ex: hoje Qua, pede próxima Seg), diff = 5 (já é da próxima semana).
+        if (diaAlvoNum > hojeNum) { // Dia alvo é mais tarde na semana atual
+            diff += 7;
+        }
+        // Se diaAlvoNum <= hojeNum, o diff já calcula para a próxima semana.
     }
-    // Se não é "próxima" e diff > 0, já está a apontar para o dia correto na semana atual ou na próxima.
-    
-    dataBase = agoraEmSaoPaulo.add(diff, 'day').startOf('day');
-    console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' (ehProxima: ${ehProximaSemana}, hojeNum: ${hojeNum}, diaAlvoNum: ${diaAlvoNum}, diff: ${diff}) interpretado como:`, dataBase.format('YYYY-MM-DD'));
-  }
-  else { 
+    dataAlvo = agoraEmSaoPaulo.add(diff, 'day').startOf('day');
+    console.log(`interpretarDataHora: Dia da semana '${dataRelativa}' (ehProxima: ${ehProximaSemana}, hojeNum: ${hojeNum}, diaAlvoNum: ${diaAlvoNum}, diff: ${diff}) interpretado como:`, dataAlvo.format('YYYY-MM-DD'));
+  } else { // Datas explícitas
     let dataParseada = null;
-    const formatosData = [
-        'DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY',
-        'D MMMM YYYY', 'D [de] MMMM [de] YYYY', 
-        'D MMMM', 'D [de] MMMM' 
-    ];
-    const mesesPt = { // Para parse de "D de MMMM" se dayjs não pegar com locale
+    const mesesPt = {
         janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
         julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12
     };
+    const matchMesExtenso = dataNorm.match(/(\d{1,2})\s+(?:de\s+)?([a-zA-Zçã]+)(?:\s+(?:de\s+)?(\d{4}))?/i);
 
-    // Tentativa de parse com "D de MMMM [de YYYY]"
-    const matchMesExtenso = dataRelativa.match(/(\d{1,2})\s+de\s+([a-zA-Zçã]+)(?:\s+de\s+(\d{4}))?/i);
     if (matchMesExtenso) {
         const dia = parseInt(matchMesExtenso[1],10);
         const nomeMes = matchMesExtenso[2].toLowerCase();
@@ -110,17 +135,10 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     }
 
     if (!dataParseada || !dataParseada.isValid()) { 
+        const formatosData = ['DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY'];
         for (const formato of formatosData) {
           dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); 
           if (dataParseada.isValid()) {
-            if ((formato === 'D MMMM' || formato === 'D [de] MMMM') && !dataRelativa.match(/\d{4}/)) { 
-                let dataComAnoCorrente = dataParseada.year(agoraEmSaoPaulo.year());
-                if (dataComAnoCorrente.isBefore(agoraEmSaoPaulo, 'day')) {
-                    dataParseada = dataComAnoCorrente.add(1, 'year');
-                } else {
-                    dataParseada = dataComAnoCorrente;
-                }
-            }
             console.log(`interpretarDataHora: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
             break; 
           }
@@ -128,34 +146,14 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
     }
 
     if (dataParseada && dataParseada.isValid()) {
-      dataBase = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA); 
+      dataAlvo = dayjs.tz(dataParseada.format('YYYY-MM-DD'), TIMEZONE_REFERENCIA).startOf('day'); 
     } else {
       console.error("interpretarDataHora: Formato de data não reconhecido:", dataRelativa);
       return null;
     }
   }
 
-  let horas = 0, minutos = 0;
-  if (horarioProcessado === "meio-dia") { 
-    horas = 12;
-  } else if (horarioProcessado === "meia-noite") { 
-    horas = 0;
-  } else {
-    const matchHorario = horarioProcessado.match(/(\d{1,2})(?:h|:)?(\d{0,2})?/i); 
-    if (matchHorario) {
-      horas = parseInt(matchHorario[1], 10);
-      minutos = matchHorario[2] ? parseInt(matchHorario[2], 10) : 0;
-      if (horas < 0 || horas > 23 || minutos < 0 || minutos > 59) {
-          console.error("interpretarDataHora: Horas/minutos inválidos", {horas, minutos});
-          return null;
-      }
-    } else { 
-      console.error("interpretarDataHora: Formato de horário não reconhecido", horarioProcessado);
-      return null; 
-    }
-  }
-
-  const dataHoraFinalEmSaoPaulo = dataBase.hour(horas).minute(minutos).second(0).millisecond(0);
+  const dataHoraFinalEmSaoPaulo = dataAlvo.hour(horas).minute(minutos).second(0).millisecond(0);
   if (!dataHoraFinalEmSaoPaulo.isValid()) {
       console.error("interpretarDataHora: Data/Hora final inválida em SP", dataHoraFinalEmSaoPaulo);
       return null;
