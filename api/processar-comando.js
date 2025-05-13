@@ -9,7 +9,7 @@ import relativeTime from 'dayjs/plugin/relativeTime.js';
 import localizedFormat from 'dayjs/plugin/localizedFormat.js';
 import 'dayjs/locale/pt-br.js';
 
-// BACKEND V36 (Adiciona comentário de teste para o linter e revisão geral)
+// BACKEND V37 (Versão limpa, sem comentários de depuração/Git no final)
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(customParseFormat);
@@ -41,7 +41,7 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
 // --- Funções Auxiliares ---
 function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   if (typeof dataRelativa !== 'string' || typeof horarioTexto !== 'string' || !dataRelativa.trim() || !horarioTexto.trim()) {
-    console.error("interpretarDataHora (v36): Data ou Horário inválidos ou em falta.", { dataRelativa, horarioTexto });
+    console.error("interpretarDataHora (v37): Data ou Horário inválidos ou em falta.", { dataRelativa, horarioTexto });
     return null;
   }
 
@@ -50,7 +50,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   let dataNorm = dataRelativa.toLowerCase().trim();
   let horarioProcessado = horarioTexto.toLowerCase().trim().replace(/^(umas\s+|por volta d[ao]s\s+)/, '');
 
-  console.log(`interpretarDataHora (v36): Input: dataRelativa='${dataRelativa}', horarioTexto='${horarioTexto}'`);
+  console.log(`interpretarDataHora (v37): Input: dataRelativa='${dataRelativa}', horarioTexto='${horarioTexto}'`);
 
   const diasDaSemanaMap = {
     domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6
@@ -116,7 +116,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
         if (dataParseada && dataParseada.isValid()) {
             dataAlvo = dayjs.tz(dataParseada.format('YYYY-MM-DD'), 'YYYY-MM-DD', TIMEZONE_REFERENCIA, true).startOf('day');
         } else {
-            console.error("interpretarDataHora (v36): Formato de data não reconhecido:", dataRelativa);
+            console.error("interpretarDataHora (v37): Formato de data não reconhecido:", dataRelativa);
             return null;
         }
     }
@@ -131,21 +131,21 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
         horas = parseInt(matchHorario[1], 10);
         minutos = matchHorario[2] ? parseInt(matchHorario[2], 10) : 0;
         if (isNaN(horas) || isNaN(minutos) || horas < 0 || horas > 23 || minutos < 0 || minutos > 59) {
-            console.error("interpretarDataHora (v36): Horas/minutos inválidos:", {horas, minutos});
+            console.error("interpretarDataHora (v37): Horas/minutos inválidos:", {horas, minutos});
             return null;
         }
     } else {
-        console.error("interpretarDataHora (v36): Formato de horário não reconhecido:", horarioProcessado);
+        console.error("interpretarDataHora (v37): Formato de horário não reconhecido:", horarioProcessado);
         return null;
     }
   }
 
   const dataHoraFinalEmSaoPaulo = dataAlvo.hour(horas).minute(minutos).second(0).millisecond(0);
   if (!dataHoraFinalEmSaoPaulo.isValid()) {
-      console.error("interpretarDataHora (v36): Data/Hora final inválida em SP:", dataHoraFinalEmSaoPaulo.toString());
+      console.error("interpretarDataHora (v37): Data/Hora final inválida em SP:", dataHoraFinalEmSaoPaulo.toString());
       return null;
   }
-  console.log("interpretarDataHora (v36): Data/Hora final em São Paulo:", dataHoraFinalEmSaoPaulo.format('YYYY-MM-DD HH:mm:ss Z'));
+  console.log("interpretarDataHora (v37): Data/Hora final em São Paulo:", dataHoraFinalEmSaoPaulo.format('YYYY-MM-DD HH:mm:ss Z'));
   return dataHoraFinalEmSaoPaulo.utc();
 }
 
@@ -173,17 +173,17 @@ async function gerarRespostaConversacional(contextoParaIA) {
     if (completion?.choices?.[0]?.message?.content) {
         return completion.choices[0].message.content.trim();
     } else {
-        console.error("Backend (v36): Resposta da OpenAI inválida.", completion);
+        console.error("Backend (v37): Resposta da OpenAI inválida.", completion);
         return "Peço desculpa, não consegui obter uma resposta da IA neste momento.";
     }
   } catch (error) {
-    console.error("Backend (v36): Erro ao gerar resposta com OpenAI:", error);
+    console.error("Backend (v37): Erro ao gerar resposta com OpenAI:", error);
     return "Peço desculpa, ocorreu um erro ao tentar processar a sua resposta com a IA.";
   }
 }
 
 export default async function handler(req, res) {
-  console.log("Backend (v36): Função handler iniciada.");
+  console.log("Backend (v37): Função handler iniciada.");
 
   if (req.method !== 'POST') {
     return res.status(405).json({ mensagem: `Método ${req.method} não permitido.` });
@@ -195,7 +195,7 @@ export default async function handler(req, res) {
   }
 
   if (!openai || !supabase) {
-    console.error("Backend (v36): OpenAI ou Supabase não inicializados.");
+    console.error("Backend (v37): OpenAI ou Supabase não inicializados.");
     return res.status(500).json({ mensagem: "Erro de configuração interna do servidor." });
   }
 
@@ -245,7 +245,7 @@ export default async function handler(req, res) {
     });
 
     if (!extracaoResponse?.choices?.[0]?.message?.content) {
-        console.error("Backend (v36): Resposta da OpenAI para extração inválida.", extracaoResponse);
+        console.error("Backend (v37): Resposta da OpenAI para extração inválida.", extracaoResponse);
         mensagemParaFrontend = await gerarRespostaConversacional("Desculpe, tive um problema ao entender seu pedido. Poderia tentar de novo?");
         return res.status(500).json({ mensagem: mensagemParaFrontend });
     }
@@ -254,20 +254,20 @@ export default async function handler(req, res) {
     try {
       dadosComando = JSON.parse(rawJsonFromOpenAI);
     } catch (e) {
-      console.error("Backend (v36): Erro parse JSON da extração OpenAI:", e, rawJsonFromOpenAI);
+      console.error("Backend (v37): Erro parse JSON da extração OpenAI:", e, rawJsonFromOpenAI);
       mensagemParaFrontend = await gerarRespostaConversacional("Desculpe, tive um problema ao processar seu pedido. Tente de forma mais simples?");
       return res.status(500).json({ mensagem: mensagemParaFrontend });
     }
 
     if (!dadosComando || typeof dadosComando !== 'object') {
-        console.error("Backend (v36): dadosComando não é objeto válido.", dadosComando);
+        console.error("Backend (v37): dadosComando não é objeto válido.", dadosComando);
         mensagemParaFrontend = await gerarRespostaConversacional("Desculpe, não estruturei seu pedido corretamente. Poderia reformular?");
         return res.status(500).json({ mensagem: mensagemParaFrontend });
     }
-    console.log("Backend (v36): Dados extraídos:", dadosComando);
+    console.log("Backend (v37): Dados extraídos:", dadosComando);
 
     if (dadosComando.mensagem_clarificacao_necessaria && typeof dadosComando.mensagem_clarificacao_necessaria === 'string') {
-      console.log("Backend (v36): Clarificação necessária:", dadosComando.mensagem_clarificacao_necessaria);
+      console.log("Backend (v37): Clarificação necessária:", dadosComando.mensagem_clarificacao_necessaria);
       let contextoClarificacao = `O utilizador disse: "${comando}". Preciso de mais informações: ${dadosComando.mensagem_clarificacao_necessaria}. Formule uma pergunta amigável.`;
       if (dadosComando.intencao === "marcar_reuniao") {
          contextoClarificacao = `O utilizador quer marcar: "${comando}". Para continuar, preciso de: ${dadosComando.mensagem_clarificacao_necessaria}. Peça de forma natural.`;
@@ -403,7 +403,7 @@ export default async function handler(req, res) {
                 const dataHoraCanc = reuniaoCanc.data_hora ? dayjs(reuniaoCanc.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm') : "data/hora desconhecida";
                 const infoCanc = `${tipoCanc} com ${pessoaCanc} de ${dataHoraCanc}`;
                 mensagemParaFrontend = await gerarRespostaConversacional(`${infoCanc} foi cancelado com sucesso.`);
-            } else if (!mensagemParaFrontend) { // Se nenhuma mensagem foi definida ainda
+            } else if (!mensagemParaFrontend) { 
                 mensagemParaFrontend = await gerarRespostaConversacional(`Não identifiquei o compromisso para cancelar. Forneça um ID ou detalhes claros.`);
             }
             break;
@@ -531,42 +531,19 @@ export default async function handler(req, res) {
           break;
       }
     } else {
-        console.error("Backend (v36): 'intencao' inválida ou ausente.", dadosComando);
+        console.error("Backend (v37): 'intencao' inválida ou ausente.", dadosComando); // Mudado para v37 para consistência do log
         mensagemParaFrontend = await gerarRespostaConversacional(`Não determinei sua intenção em "${comando}". Poderia reformular?`);
     }
     
     if (typeof mensagemParaFrontend !== 'string' || !mensagemParaFrontend.trim()) {
-        console.warn("Backend (v36): mensagemParaFrontend vazia/inválida no final. Usando fallback.");
+        console.warn("Backend (v37): mensagemParaFrontend vazia/inválida no final. Usando fallback."); // Mudado para v37
         mensagemParaFrontend = "Não consegui processar seu pedido completamente. Tente novamente.";
     }
     return res.status(200).json({ mensagem: mensagemParaFrontend });
 
   } catch (error) {
-    console.error("Backend (v36): Erro GERAL:", error, "\nComando:", comando, "\nDadosExtraidos:", JSON.stringify(dadosComando, null, 2));
+    console.error("Backend (v37): Erro GERAL:", error, "\nComando:", comando, "\nDadosExtraidos:", JSON.stringify(dadosComando, null, 2)); // Mudado para v37
     const respostaErroIA = await gerarRespostaConversacional(`Desculpe, um erro técnico inesperado ocorreu com "${comando}". Registrei para análise. Tente mais tarde ou reformule.`);
     return res.status(500).json({ mensagem: respostaErroIA });
   }
 } // Fim da função handler
-
-// TESTE LINTER: Fim do código JS.
-```
-
-**Comandos Git:**
-
-```bash
-git add .
-git commit -m "Refatora backend para v36 - Adiciona comentário teste para linter e revisões"
-git push origin master
-```
-
-Ou, se seu branch principal for `main`:
-`git push origin main`
-
-**POR FAVOR, É MUITO IMPORTANTE:**
-
-Se o Cursor continuar a mostrar erros:
-1.  **Vá à aba "Problems" (Problemas) no painel inferior do Cursor.**
-2.  **Copie TODAS as mensagens de erro exatas que aparecem lá.** Podem ser várias.
-3.  **Cole essas mensagens aqui para mim.**
-
-Com as mensagens de erro específicas, poderei identificar exatamente onde o linter está a encontrar problemas. Sem isso, continuaremos neste ciclo. Agradeço imenso a sua colaboração e paciênc
