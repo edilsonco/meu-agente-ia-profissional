@@ -9,7 +9,7 @@ import relativeTime from 'dayjs/plugin/relativeTime.js';
 import localizedFormat from 'dayjs/plugin/localizedFormat.js';
 import 'dayjs/locale/pt-br.js';
 
-// BACKEND V37 (Versão limpa, sem comentários de depuração/Git no final)
+// BACKEND V38 (Interpretação de Data Aprimorada para DD/MM e lógica de ano)
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(customParseFormat);
@@ -41,7 +41,7 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
 // --- Funções Auxiliares ---
 function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   if (typeof dataRelativa !== 'string' || typeof horarioTexto !== 'string' || !dataRelativa.trim() || !horarioTexto.trim()) {
-    console.error("interpretarDataHora (v37): Data ou Horário inválidos ou em falta.", { dataRelativa, horarioTexto });
+    console.error("interpretarDataHora (v38): Data ou Horário inválidos ou em falta.", { dataRelativa, horarioTexto });
     return null;
   }
 
@@ -50,7 +50,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   let dataNorm = dataRelativa.toLowerCase().trim();
   let horarioProcessado = horarioTexto.toLowerCase().trim().replace(/^(umas\s+|por volta d[ao]s\s+)/, '');
 
-  console.log(`interpretarDataHora (v37): Input: dataRelativa='${dataRelativa}', horarioTexto='${horarioTexto}'`);
+  console.log(`interpretarDataHora (v38): Input: dataRelativa='${dataRelativa}', horarioTexto='${horarioTexto}'`);
 
   const diasDaSemanaMap = {
     domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6
@@ -81,8 +81,11 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             }
         }
         dataAlvo = dataAlvo.startOf('day');
+        console.log(`interpretarDataHora (v38): Dia da semana '${dataRelativa}' interpretado como:`, dataAlvo.format('YYYY-MM-DD'));
     } else { 
         let dataParseada = null;
+        let anoFoiExtraidoOuParseado = false; 
+
         const mesesPt = {
             janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
             julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12
@@ -93,30 +96,41 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             const dia = parseInt(matchMesExtenso[1],10);
             const nomeMes = matchMesExtenso[2].toLowerCase();
             const mes = mesesPt[nomeMes];
-            let anoStr = matchMesExtenso[3];
+            let anoStr = matchMesExtenso[3]; // Pode ser undefined se o ano não for fornecido
             let ano = anoStr ? parseInt(anoStr, 10) : agoraEmSaoPaulo.year();
             if (anoStr && anoStr.length === 2) ano = 2000 + ano;
 
             if (dia && mes && ano) {
                 dataParseada = dayjs.tz(`${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`, 'YYYY-MM-DD', TIMEZONE_REFERENCIA, true);
-                if (dataParseada.isValid() && !matchMesExtenso[3] && dataParseada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
-                    dataParseada = dataParseada.year(agoraEmSaoPaulo.year() + 1);
-                }
+                anoFoiExtraidoOuParseado = !!anoStr; // Verdadeiro se o ano estava na string original
             }
         }
 
         if (!dataParseada || !dataParseada.isValid()) {
-            const formatosData = ['DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY', 'YYYY-MM-DD'];
+            const formatosData = ['DD/MM/YYYY', 'DD-MM-YYYY', 'DD/MM/YY', 'DD-MM-YY', 'YYYY-MM-DD', 'DD/MM']; // Adicionado 'DD/MM'
             for (const formato of formatosData) {
-                dataParseada = dayjs(dataRelativa, formato, 'pt-br', true); // strict parsing
-                if (dataParseada.isValid()) break;
+                let tempDate = dayjs(dataRelativa, formato, 'pt-br', true); 
+                if (tempDate.isValid()) {
+                    dataParseada = tempDate;
+                    if (formato.toLowerCase().includes('yyyy') || (formato.toLowerCase().includes('yy') && dataRelativa.match(/\d{2}$/))) {
+                        anoFoiExtraidoOuParseado = true;
+                    } else if (formato === 'DD/MM') { // Ano foi inferido como o atual
+                        anoFoiExtraidoOuParseado = false;
+                    }
+                    console.log(`interpretarDataHora (v38) - Loop: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
+                    break;
+                }
             }
         }
 
         if (dataParseada && dataParseada.isValid()) {
+            if (!anoFoiExtraidoOuParseado && dataParseada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
+                dataParseada = dataParseada.year(agoraEmSaoPaulo.year() + 1);
+                console.log(`interpretarDataHora (v38) - Ano ajustado para o próximo por estar no passado e sem ano explícito.`);
+            }
             dataAlvo = dayjs.tz(dataParseada.format('YYYY-MM-DD'), 'YYYY-MM-DD', TIMEZONE_REFERENCIA, true).startOf('day');
         } else {
-            console.error("interpretarDataHora (v37): Formato de data não reconhecido:", dataRelativa);
+            console.error("interpretarDataHora (v38): Formato de data não reconhecido ou data inválida:", dataRelativa);
             return null;
         }
     }
@@ -131,21 +145,21 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
         horas = parseInt(matchHorario[1], 10);
         minutos = matchHorario[2] ? parseInt(matchHorario[2], 10) : 0;
         if (isNaN(horas) || isNaN(minutos) || horas < 0 || horas > 23 || minutos < 0 || minutos > 59) {
-            console.error("interpretarDataHora (v37): Horas/minutos inválidos:", {horas, minutos});
+            console.error("interpretarDataHora (v38): Horas/minutos inválidos:", {horas, minutos});
             return null;
         }
     } else {
-        console.error("interpretarDataHora (v37): Formato de horário não reconhecido:", horarioProcessado);
+        console.error("interpretarDataHora (v38): Formato de horário não reconhecido:", horarioProcessado);
         return null;
     }
   }
 
   const dataHoraFinalEmSaoPaulo = dataAlvo.hour(horas).minute(minutos).second(0).millisecond(0);
   if (!dataHoraFinalEmSaoPaulo.isValid()) {
-      console.error("interpretarDataHora (v37): Data/Hora final inválida em SP:", dataHoraFinalEmSaoPaulo.toString());
+      console.error("interpretarDataHora (v38): Data/Hora final inválida em SP:", dataHoraFinalEmSaoPaulo.toString());
       return null;
   }
-  console.log("interpretarDataHora (v37): Data/Hora final em São Paulo:", dataHoraFinalEmSaoPaulo.format('YYYY-MM-DD HH:mm:ss Z'));
+  console.log("interpretarDataHora (v38): Data/Hora final em São Paulo:", dataHoraFinalEmSaoPaulo.format('YYYY-MM-DD HH:mm:ss Z'));
   return dataHoraFinalEmSaoPaulo.utc();
 }
 
@@ -173,17 +187,17 @@ async function gerarRespostaConversacional(contextoParaIA) {
     if (completion?.choices?.[0]?.message?.content) {
         return completion.choices[0].message.content.trim();
     } else {
-        console.error("Backend (v37): Resposta da OpenAI inválida.", completion);
+        console.error("Backend (v38): Resposta da OpenAI inválida.", completion);
         return "Peço desculpa, não consegui obter uma resposta da IA neste momento.";
     }
   } catch (error) {
-    console.error("Backend (v37): Erro ao gerar resposta com OpenAI:", error);
+    console.error("Backend (v38): Erro ao gerar resposta com OpenAI:", error);
     return "Peço desculpa, ocorreu um erro ao tentar processar a sua resposta com a IA.";
   }
 }
 
 export default async function handler(req, res) {
-  console.log("Backend (v37): Função handler iniciada.");
+  console.log("Backend (v38): Função handler iniciada.");
 
   if (req.method !== 'POST') {
     return res.status(405).json({ mensagem: `Método ${req.method} não permitido.` });
@@ -195,7 +209,7 @@ export default async function handler(req, res) {
   }
 
   if (!openai || !supabase) {
-    console.error("Backend (v37): OpenAI ou Supabase não inicializados.");
+    console.error("Backend (v38): OpenAI ou Supabase não inicializados.");
     return res.status(500).json({ mensagem: "Erro de configuração interna do servidor." });
   }
 
@@ -245,7 +259,7 @@ export default async function handler(req, res) {
     });
 
     if (!extracaoResponse?.choices?.[0]?.message?.content) {
-        console.error("Backend (v37): Resposta da OpenAI para extração inválida.", extracaoResponse);
+        console.error("Backend (v38): Resposta da OpenAI para extração inválida.", extracaoResponse);
         mensagemParaFrontend = await gerarRespostaConversacional("Desculpe, tive um problema ao entender seu pedido. Poderia tentar de novo?");
         return res.status(500).json({ mensagem: mensagemParaFrontend });
     }
@@ -254,20 +268,20 @@ export default async function handler(req, res) {
     try {
       dadosComando = JSON.parse(rawJsonFromOpenAI);
     } catch (e) {
-      console.error("Backend (v37): Erro parse JSON da extração OpenAI:", e, rawJsonFromOpenAI);
+      console.error("Backend (v38): Erro parse JSON da extração OpenAI:", e, rawJsonFromOpenAI);
       mensagemParaFrontend = await gerarRespostaConversacional("Desculpe, tive um problema ao processar seu pedido. Tente de forma mais simples?");
       return res.status(500).json({ mensagem: mensagemParaFrontend });
     }
 
     if (!dadosComando || typeof dadosComando !== 'object') {
-        console.error("Backend (v37): dadosComando não é objeto válido.", dadosComando);
+        console.error("Backend (v38): dadosComando não é objeto válido.", dadosComando);
         mensagemParaFrontend = await gerarRespostaConversacional("Desculpe, não estruturei seu pedido corretamente. Poderia reformular?");
         return res.status(500).json({ mensagem: mensagemParaFrontend });
     }
-    console.log("Backend (v37): Dados extraídos:", dadosComando);
+    console.log("Backend (v38): Dados extraídos:", dadosComando);
 
     if (dadosComando.mensagem_clarificacao_necessaria && typeof dadosComando.mensagem_clarificacao_necessaria === 'string') {
-      console.log("Backend (v37): Clarificação necessária:", dadosComando.mensagem_clarificacao_necessaria);
+      console.log("Backend (v38): Clarificação necessária:", dadosComando.mensagem_clarificacao_necessaria);
       let contextoClarificacao = `O utilizador disse: "${comando}". Preciso de mais informações: ${dadosComando.mensagem_clarificacao_necessaria}. Formule uma pergunta amigável.`;
       if (dadosComando.intencao === "marcar_reuniao") {
          contextoClarificacao = `O utilizador quer marcar: "${comando}". Para continuar, preciso de: ${dadosComando.mensagem_clarificacao_necessaria}. Peça de forma natural.`;
@@ -531,18 +545,18 @@ export default async function handler(req, res) {
           break;
       }
     } else {
-        console.error("Backend (v37): 'intencao' inválida ou ausente.", dadosComando); // Mudado para v37 para consistência do log
+        console.error("Backend (v38): 'intencao' inválida ou ausente.", dadosComando); 
         mensagemParaFrontend = await gerarRespostaConversacional(`Não determinei sua intenção em "${comando}". Poderia reformular?`);
     }
     
     if (typeof mensagemParaFrontend !== 'string' || !mensagemParaFrontend.trim()) {
-        console.warn("Backend (v37): mensagemParaFrontend vazia/inválida no final. Usando fallback."); // Mudado para v37
+        console.warn("Backend (v38): mensagemParaFrontend vazia/inválida no final. Usando fallback."); 
         mensagemParaFrontend = "Não consegui processar seu pedido completamente. Tente novamente.";
     }
     return res.status(200).json({ mensagem: mensagemParaFrontend });
 
   } catch (error) {
-    console.error("Backend (v37): Erro GERAL:", error, "\nComando:", comando, "\nDadosExtraidos:", JSON.stringify(dadosComando, null, 2)); // Mudado para v37
+    console.error("Backend (v38): Erro GERAL:", error, "\nComando:", comando, "\nDadosExtraidos:", JSON.stringify(dadosComando, null, 2)); 
     const respostaErroIA = await gerarRespostaConversacional(`Desculpe, um erro técnico inesperado ocorreu com "${comando}". Registrei para análise. Tente mais tarde ou reformule.`);
     return res.status(500).json({ mensagem: respostaErroIA });
   }
