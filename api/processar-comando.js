@@ -9,7 +9,7 @@ import relativeTime from 'dayjs/plugin/relativeTime.js';
 import localizedFormat from 'dayjs/plugin/localizedFormat.js';
 import 'dayjs/locale/pt-br.js';
 
-// BACKEND V39 (Refinamento na lógica de clarificação para marcar_reuniao)
+// BACKEND V40 (Controle mais rígido na geração de resposta e clarificação)
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(customParseFormat);
@@ -41,7 +41,7 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
 // --- Funções Auxiliares ---
 function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   if (typeof dataRelativa !== 'string' || typeof horarioTexto !== 'string' || !dataRelativa.trim() || !horarioTexto.trim()) {
-    console.error("interpretarDataHora (v39): Data ou Horário inválidos ou em falta.", { dataRelativa, horarioTexto });
+    console.error("interpretarDataHora (v40): Data ou Horário inválidos ou em falta.", { dataRelativa, horarioTexto });
     return null;
   }
 
@@ -50,7 +50,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
   let dataNorm = dataRelativa.toLowerCase().trim();
   let horarioProcessado = horarioTexto.toLowerCase().trim().replace(/^(umas\s+|por volta d[ao]s\s+)/, '');
 
-  console.log(`interpretarDataHora (v39): Input: dataRelativa='${dataRelativa}', horarioTexto='${horarioTexto}'`);
+  console.log(`interpretarDataHora (v40): Input: dataRelativa='${dataRelativa}', horarioTexto='${horarioTexto}'`);
 
   const diasDaSemanaMap = {
     domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6
@@ -81,7 +81,7 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
             }
         }
         dataAlvo = dataAlvo.startOf('day');
-        console.log(`interpretarDataHora (v39): Dia da semana '${dataRelativa}' interpretado como:`, dataAlvo.format('YYYY-MM-DD'));
+        console.log(`interpretarDataHora (v40): Dia da semana '${dataRelativa}' interpretado como:`, dataAlvo.format('YYYY-MM-DD'));
     } else { 
         let dataParseada = null;
         let anoFoiExtraidoOuParseado = false; 
@@ -115,27 +115,22 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
                     if (formato.toLowerCase().includes('yyyy') || (formato.toLowerCase().includes('yy') && dataRelativa.match(/\d{2}$/))) {
                         anoFoiExtraidoOuParseado = true;
                     } else if (formato === 'DD/MM') { 
-                        anoFoiExtraidoOuParseado = false; // Ano foi inferido como o atual
-                         // Se o formato é DD/MM, dayjs por padrão usa o ano atual.
-                        // Precisamos garantir que, se essa data já passou, ela seja para o próximo ano.
-                        // Esta lógica será aplicada depois do loop.
+                        anoFoiExtraidoOuParseado = false; 
                     }
-                    console.log(`interpretarDataHora (v39) - Loop: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
+                    console.log(`interpretarDataHora (v40) - Loop: Data parseada com formato '${formato}':`, dataParseada.format('YYYY-MM-DD'));
                     break;
                 }
             }
         }
 
         if (dataParseada && dataParseada.isValid()) {
-            // Se o ano não foi explicitamente fornecido E a data parseada (com ano corrente) está no passado,
-            // então ajusta para o próximo ano.
             if (!anoFoiExtraidoOuParseado && dataParseada.isBefore(agoraEmSaoPaulo.startOf('day'))) {
                 dataParseada = dataParseada.year(agoraEmSaoPaulo.year() + 1);
-                console.log(`interpretarDataHora (v39) - Ano ajustado para o próximo.`);
+                console.log(`interpretarDataHora (v40) - Ano ajustado para o próximo.`);
             }
             dataAlvo = dayjs.tz(dataParseada.format('YYYY-MM-DD'), 'YYYY-MM-DD', TIMEZONE_REFERENCIA, true).startOf('day');
         } else {
-            console.error("interpretarDataHora (v39): Formato de data não reconhecido ou data inválida:", dataRelativa);
+            console.error("interpretarDataHora (v40): Formato de data não reconhecido ou data inválida:", dataRelativa);
             return null;
         }
     }
@@ -150,21 +145,21 @@ function interpretarDataHoraComDayjs(dataRelativa, horarioTexto) {
         horas = parseInt(matchHorario[1], 10);
         minutos = matchHorario[2] ? parseInt(matchHorario[2], 10) : 0;
         if (isNaN(horas) || isNaN(minutos) || horas < 0 || horas > 23 || minutos < 0 || minutos > 59) {
-            console.error("interpretarDataHora (v39): Horas/minutos inválidos:", {horas, minutos});
+            console.error("interpretarDataHora (v40): Horas/minutos inválidos:", {horas, minutos});
             return null;
         }
     } else {
-        console.error("interpretarDataHora (v39): Formato de horário não reconhecido:", horarioProcessado);
+        console.error("interpretarDataHora (v40): Formato de horário não reconhecido:", horarioProcessado);
         return null;
     }
   }
 
   const dataHoraFinalEmSaoPaulo = dataAlvo.hour(horas).minute(minutos).second(0).millisecond(0);
   if (!dataHoraFinalEmSaoPaulo.isValid()) {
-      console.error("interpretarDataHora (v39): Data/Hora final inválida em SP:", dataHoraFinalEmSaoPaulo.toString());
+      console.error("interpretarDataHora (v40): Data/Hora final inválida em SP:", dataHoraFinalEmSaoPaulo.toString());
       return null;
   }
-  console.log("interpretarDataHora (v39): Data/Hora final em São Paulo:", dataHoraFinalEmSaoPaulo.format('YYYY-MM-DD HH:mm:ss Z'));
+  console.log("interpretarDataHora (v40): Data/Hora final em São Paulo:", dataHoraFinalEmSaoPaulo.format('YYYY-MM-DD HH:mm:ss Z'));
   return dataHoraFinalEmSaoPaulo.utc();
 }
 
@@ -183,7 +178,11 @@ async function gerarRespostaConversacional(contextoParaIA) {
       messages: [
         {
           role: "system",
-          content: `Você é um assistente de agendamento virtual chamado "Agente IA", extremamente simpático, prestável e profissional. Responda sempre em português do Brasil. Seja claro e confirme as ações realizadas. Se houver um erro ou algo não for possível, explique de forma educada. Se precisar de mais informações para completar uma ação, peça-as de forma natural e específica. Nunca mencione IDs numéricos de reuniões diretamente para o utilizador, a menos que seja explicitamente pedido para depuração ou se precisar de desambiguar (neste caso, pode apresentar os detalhes completos para o utilizador escolher).`
+          content: `Você é um assistente de agendamento virtual chamado "Agente IA", extremamente simpático, prestável e profissional. Responda sempre em português do Brasil. 
+          Seja claro e confirme as ações realizadas. Se houver um erro ou algo não for possível, explique de forma educada. 
+          Se precisar de mais informações para completar uma ação (porque o contexto do usuário indica que algo está faltando para a tarefa principal), peça-as de forma natural e específica. 
+          Concentre-se APENAS nas informações fornecidas no contexto do usuário e na tarefa principal. Não peça informações adicionais não solicitadas ou não pertinentes (como cidade, localização, motivo detalhado do compromisso, etc.), a menos que o contexto explicitamente indique que essa informação está faltando E é essencial para a tarefa de agendamento.
+          Nunca mencione IDs numéricos de reuniões diretamente para o utilizador nas suas respostas de confirmação ou listagem, a menos que seja explicitamente pedido para depuração ou se precisar de desambiguar (neste caso, pode apresentar os detalhes completos para o utilizador escolher).`
         },
         { role: "user", content: contextoParaIA }
       ],
@@ -192,17 +191,17 @@ async function gerarRespostaConversacional(contextoParaIA) {
     if (completion?.choices?.[0]?.message?.content) {
         return completion.choices[0].message.content.trim();
     } else {
-        console.error("Backend (v39): Resposta da OpenAI inválida.", completion);
+        console.error("Backend (v40): Resposta da OpenAI inválida.", completion);
         return "Peço desculpa, não consegui obter uma resposta da IA neste momento.";
     }
   } catch (error) {
-    console.error("Backend (v39): Erro ao gerar resposta com OpenAI:", error);
+    console.error("Backend (v40): Erro ao gerar resposta com OpenAI:", error);
     return "Peço desculpa, ocorreu um erro ao tentar processar a sua resposta com a IA.";
   }
 }
 
 export default async function handler(req, res) {
-  console.log("Backend (v39): Função handler iniciada.");
+  console.log("Backend (v40): Função handler iniciada.");
 
   if (req.method !== 'POST') {
     return res.status(405).json({ mensagem: `Método ${req.method} não permitido.` });
@@ -214,7 +213,7 @@ export default async function handler(req, res) {
   }
 
   if (!openai || !supabase) {
-    console.error("Backend (v39): OpenAI ou Supabase não inicializados.");
+    console.error("Backend (v40): OpenAI ou Supabase não inicializados.");
     return res.status(500).json({ mensagem: "Erro de configuração interna do servidor." });
   }
 
@@ -251,7 +250,7 @@ export default async function handler(req, res) {
       - horario_alteracao: string ou null, ou "manter".
       
       - mensagem_clarificacao_necessaria: (string ou null).
-          Para 'marcar_reuniao': Preencha APENAS SE (faltar 'data_nova_reuniao' OU faltar 'horario_novo_reuniao'). Se data e hora estiverem presentes, deixe null; o backend lidará com a nomeação do compromisso.
+          Para 'marcar_reuniao': Preencha APENAS SE (faltar 'data_nova_reuniao' OU faltar 'horario_novo_reuniao'). Se 'data_nova_reuniao' E 'horario_novo_reuniao' estiverem presentes, este campo DEVE ser null, mesmo que 'pessoa_nova_reuniao' seja null (o backend cuidará disso).
           Para 'cancelar_reuniao' sem id_reuniao: Preencha se faltar pessoa_alvo OU data_alvo OU horario_alvo.
           Para 'alterar_reuniao': Preencha se (faltar id_reuniao E (faltar pessoa_alvo OU data_alvo OU horario_alvo para identificar o alvo)) OU (após identificar o alvo, faltar PELO MENOS UM novo dado (pessoa_alteracao, tipo_compromisso_alteracao, data_alteracao, horario_alteracao) onde data/horario_alteracao não sejam "manter").
           Descreva EXATAMENTE o que falta. Caso contrário, deixe null.
@@ -265,7 +264,7 @@ export default async function handler(req, res) {
     });
 
     if (!extracaoResponse?.choices?.[0]?.message?.content) {
-        console.error("Backend (v39): Resposta da OpenAI para extração inválida.", extracaoResponse);
+        console.error("Backend (v40): Resposta da OpenAI para extração inválida.", extracaoResponse);
         mensagemParaFrontend = await gerarRespostaConversacional("Desculpe, tive um problema ao entender seu pedido. Poderia tentar de novo?");
         return res.status(500).json({ mensagem: mensagemParaFrontend });
     }
@@ -274,31 +273,29 @@ export default async function handler(req, res) {
     try {
       dadosComando = JSON.parse(rawJsonFromOpenAI);
     } catch (e) {
-      console.error("Backend (v39): Erro parse JSON da extração OpenAI:", e, rawJsonFromOpenAI);
+      console.error("Backend (v40): Erro parse JSON da extração OpenAI:", e, rawJsonFromOpenAI);
       mensagemParaFrontend = await gerarRespostaConversacional("Desculpe, tive um problema ao processar seu pedido. Tente de forma mais simples?");
       return res.status(500).json({ mensagem: mensagemParaFrontend });
     }
 
     if (!dadosComando || typeof dadosComando !== 'object') {
-        console.error("Backend (v39): dadosComando não é objeto válido.", dadosComando);
+        console.error("Backend (v40): dadosComando não é objeto válido.", dadosComando);
         mensagemParaFrontend = await gerarRespostaConversacional("Desculpe, não estruturei seu pedido corretamente. Poderia reformular?");
         return res.status(500).json({ mensagem: mensagemParaFrontend });
     }
-    console.log("Backend (v39): Dados extraídos:", dadosComando);
+    console.log("Backend (v40): Dados extraídos:", dadosComando);
 
     if (dadosComando.mensagem_clarificacao_necessaria && typeof dadosComando.mensagem_clarificacao_necessaria === 'string') {
-      console.log("Backend (v39): Clarificação necessária pela OpenAI:", dadosComando.mensagem_clarificacao_necessaria);
+      console.log("Backend (v40): Clarificação necessária pela OpenAI:", dadosComando.mensagem_clarificacao_necessaria);
       let contextoClarificacao = `O utilizador disse: "${comando}". Para prosseguir, preciso de mais informações: ${dadosComando.mensagem_clarificacao_necessaria}. Por favor, formule uma pergunta amigável e específica para obter estes detalhes.`;
-      // Ajustar contextos específicos se necessário, mas o genérico acima deve cobrir bem.
       if (dadosComando.intencao === "marcar_reuniao") {
          contextoClarificacao = `O utilizador quer marcar um compromisso: "${comando}". Para finalizar, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação de forma natural.`;
       } else if (dadosComando.intencao === "cancelar_reuniao" && !dadosComando.id_reuniao) {
          contextoClarificacao = `O utilizador quer cancelar um compromisso: "${comando}". Para encontrar o compromisso correto, preciso de: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação.`;
       } else if (dadosComando.intencao === "alterar_reuniao") {
-         // Se for para identificar o alvo
          if (!dadosComando.id_reuniao && !(dadosComando.pessoa_alvo && dadosComando.data_alvo && dadosComando.horario_alvo)) {
             contextoClarificacao = `O utilizador quer alterar um compromisso: "${comando}". Para identificar o compromisso a ser alterado, preciso do ID dele ou da pessoa, data e hora do compromisso original. Além disso, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça todas as informações em falta.`;
-         } else { // Se for para obter os novos dados
+         } else { 
             contextoClarificacao = `O utilizador quer alterar um compromisso: "${comando}". Para prosseguir com a alteração, preciso saber: ${dadosComando.mensagem_clarificacao_necessaria}. Peça essa informação.`;
          }
       }
@@ -312,21 +309,15 @@ export default async function handler(req, res) {
           const horarioInput = dadosComando.horario_novo_reuniao;
 
           let pessoaParaAgendar = pessoaInput;
-          // Se pessoaInput é null/undefined E tipoCompromissoInput é específico, usa o tipo como pessoa.
           if (!pessoaParaAgendar && tipoCompromissoInput && !["compromisso", "reunião"].includes(tipoCompromissoInput.toLowerCase())) {
             pessoaParaAgendar = tipoCompromissoInput.charAt(0).toUpperCase() + tipoCompromissoInput.slice(1);
           }
 
-          // Validação crucial: data e hora devem estar presentes. Pessoa pode ser inferida.
           if (dataInput && horarioInput) { 
-            // Se pessoaParaAgendar ainda for null (ex: tipo era "compromisso" e pessoa não foi dada),
-            // a IA deveria ter preenchido mensagem_clarificacao_necessaria.
-            // Se chegou aqui sem pessoaParaAgendar E sem clarificação, é um caso inesperado.
-            // Vamos permitir prosseguir e, se pessoaParaAgendar for null, usar um placeholder ou o tipo.
-            if (!pessoaParaAgendar) {
+            if (!pessoaParaAgendar) { // Se ainda nulo, usa o tipo ou um placeholder
                 pessoaParaAgendar = tipoCompromissoInput.charAt(0).toUpperCase() + tipoCompromissoInput.slice(1);
                 if (pessoaParaAgendar.toLowerCase() === "compromisso" && comando.toLowerCase().includes("para mim")) {
-                    pessoaParaAgendar = "Compromisso Pessoal"; // Um placeholder melhor
+                    pessoaParaAgendar = "Compromisso Pessoal"; 
                 }
             }
 
@@ -349,7 +340,7 @@ export default async function handler(req, res) {
                 mensagemParaFrontend = await gerarRespostaConversacional(`Já existe um ${c.tipo_compromisso || 'compromisso'} com ${c.pessoa || 'alguém'} às ${dayjs(c.data_hora).tz(TIMEZONE_REFERENCIA).format('HH:mm')} de ${dayjs(c.data_hora).tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY')}. Quer tentar outro horário para seu ${tipoCompromissoInput} com ${pessoaParaAgendar || 'você'}?`);
               } else {
                 const { data: novaReuniao, error: erroInsert } = await supabase.from('reunioes').insert([{
-                  pessoa: pessoaParaAgendar || tipoCompromissoInput, // Garante que pessoa tenha um valor
+                  pessoa: pessoaParaAgendar, // pessoaParaAgendar agora deve ter um valor
                   data_hora: dataHoraSupabase, 
                   descricao_comando: comando, 
                   tipo_compromisso: tipoCompromissoInput 
@@ -359,27 +350,24 @@ export default async function handler(req, res) {
                 
                 const dataHoraConf = dataHoraUTC.tz(TIMEZONE_REFERENCIA).format('DD/MM/YYYY HH:mm');
                 let eventoDesc = tipoCompromissoInput.charAt(0).toUpperCase() + tipoCompromissoInput.slice(1);
-                const pessoaFinal = pessoaParaAgendar || tipoCompromissoInput;
-
-                if (pessoaFinal.toLowerCase() !== tipoCompromissoInput.toLowerCase() && tipoCompromissoInput !== "compromisso") {
-                     eventoDesc += ` com ${pessoaFinal}`;
-                } else if (tipoCompromissoInput === "compromisso" && pessoaFinal && pessoaFinal.toLowerCase() !== "compromisso") {
-                     eventoDesc = `Compromisso com ${pessoaFinal}`;
+                
+                if (pessoaParaAgendar.toLowerCase() !== tipoCompromissoInput.toLowerCase() && tipoCompromissoInput !== "compromisso") {
+                     eventoDesc += ` com ${pessoaParaAgendar}`;
+                } else if (tipoCompromissoInput === "compromisso" && pessoaParaAgendar && pessoaParaAgendar.toLowerCase() !== "compromisso") {
+                     eventoDesc = `Compromisso com ${pessoaParaAgendar}`;
                 }
                 mensagemParaFrontend = await gerarRespostaConversacional(`${eventoDesc} marcado para ${dataHoraConf} com sucesso! Posso ajudar em algo mais?`);
               }
             }
-          } else { // Se dataInput ou horarioInput estiverem faltando, e a IA não pediu clarificação (improvável com o novo prompt)
+          } else { 
             let oQueFalta = [];
             if (!dataInput) oQueFalta.push("a data");
             if (!horarioInput) oQueFalta.push("o horário");
-            // Se pessoaParaAgendar também faltar, a IA deveria ter pego.
             mensagemParaFrontend = await gerarRespostaConversacional(`Para marcar o ${tipoCompromissoInput}, preciso de: ${oQueFalta.join(" e ")}. Poderia informar? (Você disse: "${comando}")`);
           }
           break;
 
         case "listar_reunioes":
-            // ... (código como na v38)
             const { data: reunioes, error: erroListagem } = await supabase.from('reunioes').select('id, pessoa, data_hora, tipo_compromisso').order('data_hora', { ascending: true });
             if (erroListagem) { console.error("Supabase erro listagem:", erroListagem); throw erroListagem; }
             if (reunioes && reunioes.length > 0) {
@@ -396,7 +384,6 @@ export default async function handler(req, res) {
             break;
 
         case "cancelar_reuniao":
-            // ... (código como na v38, com verificações robustas)
             let idParaCancelar = dadosComando.id_reuniao;
             if (idParaCancelar && (typeof idParaCancelar !== 'number' || !Number.isInteger(idParaCancelar) || idParaCancelar <= 0)) {
                 mensagemParaFrontend = await gerarRespostaConversacional(`O ID "${idParaCancelar}" não é válido. Forneça um ID numérico ou descreva o compromisso.`);
@@ -454,7 +441,6 @@ export default async function handler(req, res) {
             break;
 
         case "alterar_reuniao":
-            // ... (código como na v38, com verificações robustas)
             let idParaAlterar = dadosComando.id_reuniao;
             const { pessoa_alvo, data_alvo, horario_alvo, tipo_compromisso_alvo, 
                     pessoa_alteracao, data_alteracao, horario_alteracao, tipo_compromisso_alteracao 
@@ -577,18 +563,18 @@ export default async function handler(req, res) {
           break;
       }
     } else {
-        console.error("Backend (v39): 'intencao' inválida ou ausente.", dadosComando); 
+        console.error("Backend (v40): 'intencao' inválida ou ausente.", dadosComando); 
         mensagemParaFrontend = await gerarRespostaConversacional(`Não determinei sua intenção em "${comando}". Poderia reformular?`);
     }
     
     if (typeof mensagemParaFrontend !== 'string' || !mensagemParaFrontend.trim()) {
-        console.warn("Backend (v39): mensagemParaFrontend vazia/inválida no final. Usando fallback."); 
+        console.warn("Backend (v40): mensagemParaFrontend vazia/inválida no final. Usando fallback."); 
         mensagemParaFrontend = "Não consegui processar seu pedido completamente. Tente novamente.";
     }
     return res.status(200).json({ mensagem: mensagemParaFrontend });
 
   } catch (error) {
-    console.error("Backend (v39): Erro GERAL:", error, "\nComando:", comando, "\nDadosExtraidos:", JSON.stringify(dadosComando, null, 2)); 
+    console.error("Backend (v40): Erro GERAL:", error, "\nComando:", comando, "\nDadosExtraidos:", JSON.stringify(dadosComando, null, 2)); 
     const respostaErroIA = await gerarRespostaConversacional(`Desculpe, um erro técnico inesperado ocorreu com "${comando}". Registrei para análise. Tente mais tarde ou reformule.`);
     return res.status(500).json({ mensagem: respostaErroIA });
   }
